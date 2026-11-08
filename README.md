@@ -21,8 +21,8 @@ time than it was trained for, without touching the weights.
 
 ### The Stage-A update rule
 
-$$m_t = \tfrac{1}{2} c_1^{(t)} \sigma(\text{raw\_merge}_t), \qquad
-s_t = c_2^{(t)} \sigma(\text{raw\_split}_t)$$
+$$m_t = \tfrac{1}{2} c_1^{(t)} \sigma(\text{raw-merge}_t), \qquad
+s_t = c_2^{(t)} \sigma(\text{raw-split}_t)$$
 $$c_1^{(t+1)} = c_1^{(t)} - 2 m_t + 2 s_t, \qquad
 c_2^{(t+1)} = c_2^{(t)} + m_t - s_t$$
 
