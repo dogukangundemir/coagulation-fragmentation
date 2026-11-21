@@ -7,3 +7,6 @@ CF_Looped_Reasoning/
 reo1/
 week1_results/
 presentation_figs/
+.venv/
+/data/
+*.egg-info/

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cf-looped-reasoning"
+version = "0.1.0"
+description = "Coagulation-Fragmentation for looped reasoning on mazes (CF curriculum baselines)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "numpy",
+    "matplotlib",
+    "datasets",
+    "huggingface_hub",
+]
+
+[tool.setuptools.packages.find]
+include = ["cf*"]
