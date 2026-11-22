@@ -307,8 +307,12 @@ def test_tube_material_conserved_over_64_steps(physics_only, stochastic):
         Dh, Dv = state[0], state[1]
         s = (Dh.sum(dim=(1, 2)) + Dv.sum(dim=(1, 2))).detach().numpy()
         # per-maze relative drift (m_tube > 0 on every maze here; the floor
-        # only guards a hypothetical all-wall maze)
-        assert (np.abs(s - m_tube) / np.maximum(m_tube, 1.0)).max() < TOL, \
+        # only guards a hypothetical all-wall maze). At t = 0 the additive
+        # tie-break draw sums to M_tube only in expectation (|sum u| <= M),
+        # so its bound is sigma_tie; from the first material step on the
+        # renormalization makes the conservation exact.
+        tol = TOL if (t > 0 or not stochastic) else model.sigma_tie
+        assert (np.abs(s - m_tube) / np.maximum(m_tube, 1.0)).max() < tol, \
             f"material drifted at t={t}"
         if t == 64:
             break
@@ -520,10 +524,11 @@ def test_logits_at_matches_forward(physics_only):
 
 # ------------------------------------------------------- 8. initialisation
 def test_stochastic_tie_break_initialisation():
-    # D_e(0) = M_tube * exp(sigma_tie * u_e) / sum exp(sigma_tie * u_e'),
-    # u ~ U(-1, 1): positive, exactly M_tube in total, zero on wall edges, and
-    # different across generators (it exists to break ties between equally
-    # short routes).
+    # D_e(0) = 1 + sigma_tie * u_e, u ~ U(-1, 1) (Family G random start):
+    # every free edge starts inside [1 - sigma_tie, 1 + sigma_tie] (so
+    # positive), wall edges stay exactly 0, the draw is seeded (the same
+    # generator reproduces it) and different seeds give different draws -
+    # it exists to break the exact symmetry between tied shortest routes.
     torch.manual_seed(0)
     model = TransportCFNet()
     x, _ = maze_batch([16])
@@ -532,13 +537,21 @@ def test_stochastic_tie_break_initialisation():
     inits = [model.initial_state(x, stochastic=True,
                                  generator=torch.Generator().manual_seed(s))
              for s in (123, 456)]
+    again = model.initial_state(x, stochastic=True,
+                                generator=torch.Generator().manual_seed(123))
     Dh0, Dv0, _ = model.initial_state(x)
     assert torch.equal(Dh0, Eh) and torch.equal(Dv0, Ev)  # d_0 = 1 on free edges
     for Dh, Dv, _ in inits:
         s = Dh.sum(dim=(1, 2)) + Dv.sum(dim=(1, 2))
-        assert ((s - m_tube).abs() / m_tube < TOL).all()
+        # additive draw: in [1 - sigma, 1 + sigma] per edge, M_tube in total
+        # up to the |sum u| <= M_tube worst case
+        assert ((s - m_tube).abs() / m_tube <= model.sigma_tie).all()
+        lo, hi = 1.0 - model.sigma_tie, 1.0 + model.sigma_tie
+        assert (Dh[Eh > 0] >= lo - 1e-6).all() and (Dh[Eh > 0] <= hi + 1e-6).all()
+        assert (Dv[Ev > 0] >= lo - 1e-6).all() and (Dv[Ev > 0] <= hi + 1e-6).all()
         assert Dh.min().item() >= 0 and Dv.min().item() >= 0
         assert (Dh[Eh == 0] == 0).all() and (Dv[Ev == 0] == 0).all()
+    assert torch.equal(inits[0][0], again[0]), "same seed, different draw"
     assert (inits[0][0] - inits[1][0]).abs().max().item() > 1e-3, \
         "two generators gave the same initial thickness"
     # the physics arm has zero learned parameters by construction
@@ -558,3 +571,131 @@ def test_learned_edge_lengths_start_at_exactly_one():
     assert Lh.min().item() > 0 and Lv.min().item() > 0
     assert torch.nn.functional.softplus(model.raw_wq).item() >= 0
     assert model.eps_f > 0
+
+
+# --------------------------------------- 9. tie-break (Family G random start)
+def _two_route_grid():
+    """2x2 all-free grid, S and G at opposite corners: exactly two shortest
+    routes (via (0, 1) and via (1, 0)), tied by symmetry."""
+    x = torch.zeros(1, 3, 2, 2)
+    x[0, 0] = 1.0                       # everything walkable
+    x[0, 1, 0, 0] = 1.0                 # start
+    x[0, 2, 1, 1] = 1.0                 # goal
+    return x
+
+
+def _route_flows(Qh, Qv):
+    """Flow carried by each tied route: route A via (0, 1) uses the east
+    edge out of S, route B via (1, 0) the south edge (conservation at S
+    gives f_A + f_B = I)."""
+    return Qh[0, 0, 0].abs().item(), Qv[0, 0, 0].abs().item()
+
+
+def test_deterministic_start_splits_tied_shortest_paths_evenly():
+    # Control: with the uniform start the two tied routes are exactly
+    # symmetric, so the flow splits evenly and stays split forever.
+    torch.manual_seed(0)
+    model = TransportCFNet(physics_only=True)
+    x = _two_route_grid()
+    Dh, Dv, p = model.initial_state(x)
+    for _ in range(8):
+        Dh, Dv, p, Qh, Qv, _ = model.step(x, Dh, Dv, p)
+        f_a, f_b = _route_flows(Qh, Qv)
+        assert abs(f_a - 0.5) < TOL and abs(f_b - 0.5) < TOL
+
+
+@pytest.mark.parametrize("seed", [7, 21])
+def test_tie_break_concentrates_flow_on_one_tied_route(seed):
+    # Family G random start: the additive draw breaks the exact symmetry,
+    # the adaptation amplifies it, and after a few outer steps one tied
+    # route carries (almost) the whole current while the other thins to
+    # (almost) nothing - the flow stops splitting evenly. The invariants
+    # hold along the way: material conserved from the first step on,
+    # non-negative, wall-free structure trivially, readout marks exactly
+    # one of the two routes.
+    torch.manual_seed(0)
+    model = TransportCFNet(physics_only=True)
+    x = _two_route_grid()
+    Eh, Ev = model.edge_masks(x)
+    m_tube = (Eh.sum() + Ev.sum()).item()
+    gen = torch.Generator().manual_seed(seed)
+    Dh, Dv, p = model.initial_state(x, stochastic=True, generator=gen)
+    for t in range(1, 17):
+        Dh, Dv, p, Qh, Qv, info = model.step(x, Dh, Dv, p)
+        s = (Dh.sum() + Dv.sum()).item()
+        assert abs(s - m_tube) / m_tube < TOL, f"material drifted at t={t}"
+        assert Dh.min().item() >= NEG_EPS and Dv.min().item() >= NEG_EPS
+        assert info["residual"] < TOL
+    f_a, f_b = _route_flows(Qh, Qv)
+    assert max(f_a, f_b) > 0.9 and min(f_a, f_b) < 0.1, \
+        "adapted flow still split across the tied routes: %f / %f" % (f_a, f_b)
+    # the threshold readout lights exactly one of the two routes
+    pred = (model.read(x, Dh, Dv, p, Qh, Qv) > 0)[0].numpy()
+    route_a = np.zeros((2, 2), bool)
+    route_a[0, 0] = route_a[0, 1] = route_a[1, 1] = True
+    route_b = np.zeros((2, 2), bool)
+    route_b[0, 0] = route_b[1, 0] = route_b[1, 1] = True
+    assert (pred == route_a).all() or (pred == route_b).all()
+
+
+# ------------------------------------------------- 10. SOR (omega option)
+def test_sor_reaches_kirchhoff_minimum_faster_than_gauss_seidel():
+    # omega = 1.9 successive over-relaxation: same fixed point (the
+    # Kirchhoff potential of the exact solve), reached in fewer sweeps than
+    # plain two-colour Gauss-Seidel (omega = 1) at the same k_rel.
+    torch.manual_seed(0)
+    x, _ = maze_batch([1])
+    exact = TransportCFNet()
+    _, tre = exact.logits_at(x, [1], record=True)
+    free, eh, ev = free_masks(x)
+    Qh, Qv, p = tre["Qh"][0].numpy(), tre["Qv"][0].numpy(), tre["p"][0].numpy()
+    e_star = (Qh[eh] ** 2).sum() + (Qv[ev] ** 2).sum()   # D = d_0 = 1 frozen
+    psi_star = 0.5 * e_star - (b_field(x, exact.I) * p).sum()
+    scale = abs(psi_star)
+    errs = {}
+    for omega in (1.0, 1.9):
+        model = TransportCFNet(relaxation="sweep", k_rel=16, omega=omega)
+        _, trace = model.logits_at(x, [1], record=True)
+        assert len(trace["psi_halves"][0]) == 2 * model.k_rel
+        errs[omega] = abs(trace["psi_halves"][0][-1] - psi_star)
+    assert errs[1.9] <= errs[1.0], "SOR did not beat Gauss-Seidel at k_rel=16"
+    # and at a moderate budget SOR lands on the Kirchhoff minimum
+    sor = TransportCFNet(relaxation="sweep", k_rel=64, omega=1.9)
+    _, trace = sor.logits_at(x, [1], record=True)
+    assert abs(trace["psi_halves"][0][-1] - psi_star) <= 1e-5 * scale
+    # the omega = 1 default is bit-for-bit the plain Gauss-Seidel sweep
+    # (physics arm: no randomly initialized learned weights involved)
+    a = TransportCFNet(physics_only=True, relaxation="sweep", k_rel=16)
+    b = TransportCFNet(physics_only=True, relaxation="sweep", k_rel=16,
+                       omega=1.0)
+    ta = a.logits_at(x, [2], record=True)[1]["p"][1]
+    tb = b.logits_at(x, [2], record=True)[1]["p"][1]
+    assert torch.equal(ta, tb)
+
+
+@pytest.mark.parametrize("physics_only", [False, True])
+def test_invariants_hold_with_tie_break_and_sor_together(physics_only):
+    # Both options at once (random start + omega = 1.9 sweeps): material
+    # conserved exactly from the first step on, conductances non-negative,
+    # wall edges exactly 0, wall potentials 0, everything finite, and the
+    # swept relaxation still converges to the conservation tolerance.
+    torch.manual_seed(0)
+    model = TransportCFNet(physics_only=physics_only, relaxation="sweep",
+                           k_rel=64, omega=1.9)
+    x, _ = maze_batch([3])       # one maze: the wall mask is shared
+    Eh, Ev = model.edge_masks(x)
+    wall_h, wall_v = Eh == 0, Ev == 0
+    wall = x[0, 0] == 0
+    m_tube = (Eh.sum(dim=(1, 2)) + Ev.sum(dim=(1, 2))).numpy()
+    gen = torch.Generator().manual_seed(11)
+    Dh, Dv, p = model.initial_state(x, stochastic=True, generator=gen)
+    for t in range(1, 9):
+        Dh, Dv, p, Qh, Qv, info = model.step(x, Dh, Dv, p)
+        s = (Dh.sum(dim=(1, 2)) + Dv.sum(dim=(1, 2))).detach().numpy()
+        assert (np.abs(s - m_tube) / np.maximum(m_tube, 1.0)).max() < TOL, \
+            f"material drifted at t={t}"
+        assert Dh.min().item() >= NEG_EPS and Dv.min().item() >= NEG_EPS
+        assert (Dh[wall_h] == 0).all() and (Dv[wall_v] == 0).all()
+        assert (p[:, wall] == 0).all()
+        assert torch.isfinite(Dh).all() and torch.isfinite(p).all()
+    assert info["residual"] < 1e-3, "SOR sweeps did not conserve the flow"

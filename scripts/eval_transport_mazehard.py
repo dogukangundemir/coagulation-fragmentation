@@ -310,6 +310,257 @@ def accuracy_rows(res):
             for T, s in res["per_T"].items()}
 
 
+# --------------------------------------------- tie-break extension (Family G)
+
+def per_maze_dissipation(Qh, Qv, Dh, Dv):
+    """E = sum_e Q_e^2 / D_e per maze, from the returned flow maps and the
+    material they were solved under (the step's E_t, per maze instead of the
+    batch scalar of info["dissipation"]). Wall edges contribute 0 (D = 0
+    exactly where Q = 0)."""
+    qh, qv = Qh.double(), Qv.double()
+    zh = torch.where(Dh > 0, qh * qh / Dh.double(), torch.zeros_like(qh))
+    zv = torch.where(Dv > 0, qv * qv / Dv.double(), torch.zeros_like(qv))
+    return zh.sum(dim=(1, 2)) + zv.sum(dim=(1, 2))
+
+
+def rollout_snapshots(model, xb, Ts, Dh, Dv, p):
+    """One shared rollout from a GIVEN initial state over horizons Ts.
+
+    Returns {T: (Dh, Dv, p, Qh, Qv, diss)} where diss (B,) is the per-maze
+    dissipation of the step that produced the snapshot (the flow under the
+    pre-update material). Exact mode keeps the solver-breakdown policy of
+    evaluate_config (a maze whose solve degenerates is held at its last
+    conservation-valid flow, and at its last dissipation); sweep mode only
+    checks finiteness.
+    """
+    Ts = sorted(set(int(t) for t in Ts))
+    exact = model.relaxation == "exact"
+    B = xb.shape[0]
+    Qh = torch.zeros_like(Dh)
+    Qv = torch.zeros_like(Dv)
+    diss = torch.zeros(B, dtype=torch.float64)
+    frozen = torch.zeros(B, dtype=torch.bool)
+    snaps, t_done = {}, 0
+    for T in Ts:
+        for _ in range(T - t_done):
+            t_done += 1
+            if exact:
+                act = torch.nonzero(~frozen).flatten()
+                if act.numel() == 0:
+                    continue
+                Dh_o, Dv_o = Dh[act], Dv[act]
+                Dh2, Dv2, p2, Qh2, Qv2, _, failed = etp._step_active(
+                    model, xb[act], Dh_o, Dv_o, p[act], Qh[act], Qv[act])
+                diss[act] = per_maze_dissipation(Qh2, Qv2, Dh_o, Dv_o)
+                Dh[act], Dv[act], p[act] = Dh2, Dv2, p2
+                Qh[act], Qv[act] = Qh2, Qv2
+                if failed:
+                    frozen[act[torch.tensor(failed, dtype=torch.long)]] = True
+            else:
+                Dh_o, Dv_o = Dh, Dv
+                Dh, Dv, p, Qh, Qv, _ = model.step(xb, Dh, Dv, p)
+                if not (torch.isfinite(Dh).all() and torch.isfinite(Dv).all()
+                        and torch.isfinite(p).all()):
+                    raise SystemExit("non-finite sweep step")
+                diss = per_maze_dissipation(Qh, Qv, Dh_o, Dv_o)
+        snaps[T] = (Dh, Dv, p, Qh, Qv, diss)
+    return snaps
+
+
+def evaluate_tie_config(model, d, tied, Ts, n_starts, seed,
+                        batch_size=EVAL_BATCH):
+    """K seeded random starts (Family G tie-break): per maze and horizon the
+    start whose rollout has the LOWEST per-maze dissipation at that horizon
+    is read out, so a start whose adaptation locked onto one route (low
+    dissipation) beats starts whose flow still splits across tied routes.
+
+    Returns the same shape as evaluate_config (plus n_starts, tie_seed).
+    """
+    model = model.eval()
+    Ts = sorted(set(int(t) for t in Ts))
+    agg = {T: _new_accum() for T in Ts}
+    held_total = 0
+    total_s = 0.0
+    with torch.no_grad():
+        for i in range(0, len(d), batch_size):
+            xb = d.x[i:i + batch_size]
+            yb = d.y[i:i + batch_size]
+            tb = tied[i:i + batch_size]
+            B = xb.shape[0]
+            t0 = time.perf_counter()
+            snaps = []
+            for k in range(n_starts):
+                gen = torch.Generator().manual_seed(
+                    1000003 * seed + 1009 * k + i // batch_size)
+                Dh, Dv, p = model.initial_state(xb, stochastic=True,
+                                                generator=gen)
+                snaps.append(rollout_snapshots(model, xb, Ts, Dh, Dv, p))
+            for T in Ts:
+                diss = torch.stack([s[T][5] for s in snaps])   # (K, B)
+                pick = diss.argmin(dim=0)                       # (B,)
+                Dh_c = torch.empty_like(snaps[0][T][0])
+                Dv_c = torch.empty_like(snaps[0][T][1])
+                p_c = torch.empty_like(snaps[0][T][2])
+                Qh_c = torch.empty_like(snaps[0][T][3])
+                Qv_c = torch.empty_like(snaps[0][T][4])
+                for k in range(n_starts):
+                    m = pick == k
+                    if m.any():
+                        s = snaps[k][T]
+                        Dh_c[m], Dv_c[m], p_c[m] = s[0][m], s[1][m], s[2][m]
+                        Qh_c[m], Qv_c[m] = s[3][m], s[4][m]
+                logits = model.read(xb, Dh_c, Dv_c, p_c, Qh_c, Qv_c)
+                preds = (torch.sigmoid(logits) >= 0.5).cpu().numpy()
+                a = agg[T]
+                a["n"] += B
+                a["n_batches"] += 1
+                for k in range(B):
+                    row = evaluate_mask(preds[k], d.walls[i + k],
+                                        d.starts[i + k], d.goals[i + k],
+                                        yb[k].numpy())
+                    a["board"][bool(tb[k])] += row["exact"]
+                    a["strict"][bool(tb[k])] += row["strict"]
+                    a["iou"][bool(tb[k])] += row["iou"]
+            total_s += time.perf_counter() - t0
+    per_T = {}
+    for T in Ts:
+        a = agg[T]
+        n = a["n"]
+        per_T[str(T)] = dict(
+            board_all=a["board"][True] + a["board"][False],
+            board_tied=a["board"][True],
+            board_untied=a["board"][False],
+            strict_all=a["strict"][True] + a["strict"][False],
+            strict_tied=a["strict"][True],
+            strict_untied=a["strict"][False],
+            iou_mean=(a["iou"][True] + a["iou"][False]) / n,
+            n_held=0, wall_seconds=0.0, residual_mean=None,
+        )
+    return dict(n_mazes=len(d), wall_time_s=total_s, per_T=per_T,
+                held_mazes=held_total, n_starts=n_starts, tie_seed=seed)
+
+
+EXTENSION_OUT = OUT_DEFAULT + "_tie"
+
+
+def run_extension(args):
+    """Tie-break + SOR extension: FIRST n-test Maze-hard test mazes, exact
+    solver and SOR budgets, each with and without the K-random-start
+    tie-break (lowest-dissipation pick). Board match is the strict
+    cell-for-cell equality with the reference solution."""
+    etp.ensure_clone()
+    torch.manual_seed(0)
+    t_start = time.perf_counter()
+    rows_test = load_maze_hard("test")
+    d = MazeHardDataset(rows_test[:args.n_test])
+    tied = tied_flags(d)
+    sets = dict(n_test_mazes=len(d), n_tied=int(tied.sum()),
+                n_untied=int((~tied).sum()))
+    print("extension: first %d test mazes, %d tied" %
+          (sets["n_test_mazes"], sets["n_tied"]))
+    configs = [("exact", MazeHardExactNet(physics_only=True,
+                                          relaxation="exact"), 1)]
+    configs.append(("exact_tie", MazeHardExactNet(physics_only=True,
+                                                  relaxation="exact"),
+                    args.tie_starts))
+    for k in args.sor_ks:
+        base = dict(physics_only=True, relaxation="sweep", k_rel=k,
+                   omega=args.omega)
+        configs.append(("sor_%d" % k, TransportCFNet(**base), 1))
+        configs.append(("sor_%d_tie" % k, TransportCFNet(**base),
+                        args.tie_starts))
+    results = {}
+    for name, model, n_starts in configs:
+        t0 = time.perf_counter()
+        if n_starts > 1:
+            res = evaluate_tie_config(model, d, tied, args.steps,
+                                      n_starts, args.tie_seed,
+                                      args.batch_size)
+        else:
+            res = evaluate_config(model, d, tied, args.steps, args.batch_size)
+        res["relaxation"] = model.relaxation
+        res["k_rel"] = getattr(model, "k_rel", None)
+        res["omega"] = getattr(model, "omega", None)
+        results[name] = res
+        print("  %-14s board@T=8 %.4f best %.4f wall %.1f s"
+              % (name,
+                 res["per_T"]["8"]["board_all"] / res["n_mazes"],
+                 max(s["board_all"] for s in res["per_T"].values())
+                 / res["n_mazes"],
+                 time.perf_counter() - t0))
+    seconds = time.perf_counter() - t_start
+    payload = dict(
+        experiment=("physics-only Family D on the FIRST %d Maze-hard test "
+                    "mazes: exact solve and SOR (omega=%s) budgets, each "
+                    "with and without the Family G tie-break (%d seeded "
+                    "random starts, lowest-dissipation pick)"
+                    % (args.n_test, args.omega, args.tie_starts)),
+        dataset=dict(hf_id=CONFIG["hf_id"], split="test",
+                     n_test_mazes=sets["n_test_mazes"],
+                     note=("first %d rows of the test csv (reduced budget, "
+                           "labelled)" % args.n_test)),
+        tie_break=dict(draw="D_e(0) = 1 + sigma_tie * u, u ~ U(-1, 1), "
+                            "sigma_tie = 0.1, seeded per (start, batch)",
+                       n_starts=args.tie_starts, seed=args.tie_seed,
+                       pick="per maze and horizon: the start with the "
+                            "lowest per-maze dissipation at that horizon"),
+        sor=dict(omega=args.omega,
+                 note=("successive over-relaxation of the two-colour "
+                       "sweeps; omega = 1 is plain Gauss-Seidel")),
+        accuracy_definition=dict(
+            board_match=("predicted cells equal the reference solution "
+                         "cell-for-cell (the strict metric; cf.metrics "
+                         "'exact')"),
+            valid_path=("predicted cells form one wall-free simple "
+                        "start-to-goal path of the label's length "
+                        "(cf.metrics 'strict')")),
+        protocol=dict(steps_T=list(args.steps), sor_ks=list(args.sor_ks),
+                       training="none: 0 epochs, 0 seeds, CPU only",
+                       device="cpu"),
+        sets=sets,
+        results=results,
+        wall_time=dict(total_seconds=seconds),
+    )
+    lines = ["# Transport tie-break / SOR extension: results", "",
+             "First %d Maze-hard test mazes (%d tied). Board match = strict "
+             "cell-for-cell equality with the reference solution. SOR "
+             "omega = %s; tie-break = %d seeded random starts "
+             "(D_e(0) = 1 + 0.1*u), per maze the start with the lowest "
+             "dissipation. T = 8 is the fixed reference horizon; 'best T' "
+             "is the post-hoc maximum over T in %s (labelled, no holdout "
+             "selection)."
+             % (sets["n_test_mazes"], sets["n_tied"], args.omega,
+                args.tie_starts, list(args.steps)), "",
+             "| solver | board match, no tie (T=8 / best T) | board match, "
+             "tie-break K=%d (T=8 / best T) | valid path, no tie -> tie "
+             "(T=8) |" % args.tie_starts, "| --- | --- | --- | --- |"]
+    Ts = sorted(args.steps)
+    for base, label in [("exact", "exact solve (float64)")] + \
+            [("sor_%d" % k, "SOR omega=%s, k=%d" % (args.omega, k))
+             for k in args.sor_ks]:
+        r0, r1 = results[base], results[base + "_tie"]
+        b0 = [r0["per_T"][str(T)]["board_all"] / r0["n_mazes"] for T in Ts]
+        b1 = [r1["per_T"][str(T)]["board_all"] / r1["n_mazes"] for T in Ts]
+        s0 = r0["per_T"]["8"]["strict_all"] / r0["n_mazes"]
+        s1 = r1["per_T"]["8"]["strict_all"] / r1["n_mazes"]
+        lines.append("| %s | %s / %s | %s / %s | %s -> %s |"
+                     % (label, _fmt(b0[Ts.index(8)] if 8 in Ts else b0[-1]),
+                        _fmt(max(b0)), _fmt(b1[Ts.index(8)] if 8 in Ts else b1[-1]),
+                        _fmt(max(b1)), _fmt(s0), _fmt(s1)))
+    lines.append("")
+    payload["summary_text"] = "\n".join(lines)
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rj = out_dir / "results.json"
+    with open(rj, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=1)
+    with open(out_dir / "summary.md", "w", encoding="utf-8") as fh:
+        fh.write(payload["summary_text"])
+    print("\n".join(lines))
+    print("wrote %s" % rj)
+    return 0
+
+
 # ------------------------------------------------------------------ outputs
 
 def _fmt(x, digits=4):
@@ -583,11 +834,32 @@ def parse_args(argv=None):
                     help="output directory (default: %s)" % OUT_DEFAULT)
     ap.add_argument("--steps", nargs="+", type=int, default=DEFAULT_STEPS)
     ap.add_argument("--batch-size", type=int, default=EVAL_BATCH)
-    return ap.parse_args(argv)
+    ap.add_argument("--extension", action="store_true",
+                    help=("tie-break / SOR extension: FIRST --n-test "
+                          "Maze-hard test mazes, exact and SOR budgets, "
+                          "each with and without the K-random-start "
+                          "tie-break (writes to %s by default)"
+                          % EXTENSION_OUT))
+    ap.add_argument("--n-test", type=int, default=300,
+                    help="extension: first N test mazes (default 300)")
+    ap.add_argument("--tie-starts", type=int, default=4,
+                    help="extension: K random starts per maze (default 4)")
+    ap.add_argument("--tie-seed", type=int, default=0,
+                    help="extension: base seed of the tie-break draws")
+    ap.add_argument("--omega", type=float, default=1.9,
+                    help="extension: SOR over-relaxation factor (default 1.9)")
+    ap.add_argument("--sor-ks", nargs="+", type=int, default=[16, 64],
+                    help="extension: SOR sweep budgets (default 16 64)")
+    args = ap.parse_args(argv)
+    if args.extension and args.out == OUT_DEFAULT:
+        args.out = EXTENSION_OUT
+    return args
 
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.extension:
+        return run_extension(args)
     etp.ensure_clone()
     torch.manual_seed(0)
     t_start = time.perf_counter()

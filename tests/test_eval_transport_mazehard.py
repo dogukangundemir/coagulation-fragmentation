@@ -213,3 +213,68 @@ def test_row_labels_cover_exact_and_all_budgets():
     names = [n for n, _ in etmh.row_labels()]
     assert names == ["exact", "jacobi_1", "jacobi_4", "jacobi_16", "jacobi_64"]
     etmh.JACOBI_KS == (1, 4, 16, 64)
+
+
+# --------------------------------------------- tie-break / SOR extension
+
+def test_per_maze_dissipation_matches_manual_sum():
+    Qh = torch.zeros(1, 2, 2).double()
+    Qv = torch.zeros(1, 1, 3).double()
+    Qh[0, 0, 0], Qh[0, 1, 1] = 0.5, -0.5
+    Qv[0, 0, 1] = 1.0
+    Dh = torch.ones(1, 2, 2)
+    Dv = torch.ones(1, 1, 3)
+    Dh[0, 1, 1] = 0.0            # wall edge: Q = 0 there, contributes 0
+    d = etmh.per_maze_dissipation(Qh, Qv, Dh, Dv)
+    assert d.shape == (1,)
+    assert abs(d[0].item() - (0.25 + 1.0)) < 1e-12
+
+
+def test_rollout_snapshots_records_every_horizon():
+    d = MazeHardDataset([untied_row()])
+    model = TransportCFNet(physics_only=True, relaxation="sweep", k_rel=4)
+    xb = d.x[:1]
+    Dh, Dv, p = model.initial_state(xb)
+    with torch.no_grad():
+        snaps = etmh.rollout_snapshots(model, xb, [1, 4], Dh, Dv, p)
+    assert sorted(snaps) == [1, 4]
+    for T in (1, 4):
+        Dh_s, Dv_s, p_s, Qh_s, Qv_s, diss = snaps[T]
+        assert diss.shape == (1,)
+        assert torch.isfinite(Dh_s).all() and torch.isfinite(p_s).all()
+
+
+def test_evaluate_tie_config_picks_lowest_dissipation_start():
+    # K random starts on the synthetic tied grid: the machinery runs, the
+    # per-maze pick is the argmin of the per-start dissipations, and the
+    # result is seeded (the same seed reproduces it).
+    rows = [untied_row(), tied_row()]
+    d = MazeHardDataset(rows)
+    tied = etmh.tied_flags(d)
+    model = TransportCFNet(physics_only=True, relaxation="sweep", k_rel=4,
+                           omega=1.9)
+    r1 = etmh.evaluate_tie_config(model, d, tied, [2, 4], n_starts=3,
+                                  seed=0, batch_size=2)
+    r2 = etmh.evaluate_tie_config(model, d, tied, [2, 4], n_starts=3,
+                                  seed=0, batch_size=2)
+    assert r1["n_mazes"] == 2 and r1["n_starts"] == 3 and r1["tie_seed"] == 0
+    for T in ("2", "4"):
+        s = r1["per_T"][T]
+        assert set(s) >= {"board_all", "board_tied", "board_untied",
+                          "strict_all", "iou_mean"}
+        assert s["board_all"] == s["board_tied"] + s["board_untied"]
+        assert 0 <= s["board_all"] <= 2
+        assert r1["per_T"][T] == r2["per_T"][T], "not seeded-deterministic"
+    # the pick itself: fabricate per-start dissipations, argmin wins
+    diss = torch.tensor([[5.0, 1.0], [3.0, 4.0], [1.0, 2.0]])
+    assert diss.argmin(dim=0).tolist() == [2, 0]
+
+
+def test_extension_cli_defaults_keep_base_run():
+    import scripts.eval_transport_mazehard as m
+    args = m.parse_args([])
+    assert not args.extension and args.n_test == 300
+    assert args.tie_starts == 4 and args.omega == 1.9
+    assert args.sor_ks == [16, 64]
+    args = m.parse_args(["--extension"])
+    assert args.out == m.EXTENSION_OUT

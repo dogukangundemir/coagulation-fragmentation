@@ -78,24 +78,32 @@ class TransportCFNet(nn.Module):
     a thinned edge keeps a tiny growth term and gradients keep flowing),
     M_tube = the number of free edges of the maze (so the uniform initial
     thickness is d_0 = 1.0), sigma_tie = 0.1 (random-start variant: the
-    initial draw is normalized by its own sum, so Σ_e D_e(0) = M_tube
-    exactly).
+    additive draw 1 + sigma_tie·u keeps every D_e(0) inside
+    [1 − sigma_tie, 1 + sigma_tie], so Σ_e D_e(0) = M_tube in expectation
+    and exactly from the first material step on, which renormalizes).
 
     Args: physics_only selects the X2 physics arm (zero learned parameters);
     relaxation is "exact" (default on the curriculum grids) or "sweep";
-    k_rel is the relaxation budget in sweeps per outer step.
+    k_rel is the relaxation budget in sweeps per outer step; omega is the
+    over-relaxation factor of the sweep mode (successive over-relaxation,
+    Family-G-style speed-up): omega = 1.0 (the default) is plain
+    two-colour Gauss-Seidel, 1 < omega < 2 extrapolates each coordinate
+    update and reaches the same Kirchhoff fixed point in fewer sweeps.
     """
 
     def __init__(self, physics_only=False, relaxation="exact", k_rel=16,
                  current=1.0, eps_d=1e-6, eps_f=1e-3, tie_noise=0.1,
-                 solve_chunk=100):
+                 omega=1.0, solve_chunk=100):
         super().__init__()
         if relaxation not in ("exact", "sweep"):
             raise ValueError("relaxation must be 'exact' or 'sweep', got %r"
                              % (relaxation,))
+        if not (0.0 < omega < 2.0):
+            raise ValueError("omega must lie in (0, 2), got %r" % (omega,))
         self.physics_only = physics_only
         self.relaxation = relaxation
         self.k_rel = int(k_rel)
+        self.omega = float(omega)        # SOR factor; 1.0 = Gauss-Seidel
         self.I = float(current)              # source current I
         self.eps_d = float(eps_d)            # denominator guard, isolated cells only
         self.eps_f = float(eps_f)            # adaptation floor
@@ -157,9 +165,13 @@ class TransportCFNet(nn.Module):
         Deterministic: D_e = d_0 = 1.0 on every free edge, 0 on wall edges,
         so Σ_e D_e(0) = M_tube = the per-maze free-edge count exactly, and
         p starts at 0 (the sweep mode relaxes from this zero potential).
-        Stochastic (tie-break variant): D_e(0) = M_tube · exp(sigma_tie u_e)
-        / Σ exp(sigma_tie u_e') over free edges, u_e ~ U(−1, 1) — the draw is
-        normalized by its own sum, so Σ_e D_e(0) = M_tube exactly here too.
+        Stochastic (tie-break variant, Family G random start):
+        D_e(0) = 1 + sigma_tie · u_e over free edges, u_e ~ U(−1, 1) — an
+        additive draw around the uniform start, so every D_e(0) lies in
+        [1 − sigma_tie, 1 + sigma_tie] (> 0) and Σ_e D_e(0) = M_tube in
+        expectation; the first material step renormalizes the sum to M_tube
+        exactly, and the draw breaks the exact symmetry between tied
+        shortest routes that keeps the deterministic flow splitting evenly.
         A generator on a different device than x is honoured: the draw runs
         on the generator's device (torch.rand requires them to match) and is
         moved to x, so a CPU generator with a CUDA batch works.
@@ -174,9 +186,8 @@ class TransportCFNet(nn.Module):
             gv = 2.0 * torch.rand(Ev.shape, generator=generator, device=gdev) - 1.0
             if gdev != x.device:
                 gh, gv = gh.to(x.device), gv.to(x.device)
-            wh = torch.exp(self.sigma_tie * gh) * Eh           # free edges only
-            wv = torch.exp(self.sigma_tie * gv) * Ev
-            Dh, Dv = self._normalize_material(Eh, Ev, wh, wv)
+            Dh = (1.0 + self.sigma_tie * gh) * Eh           # free edges only
+            Dv = (1.0 + self.sigma_tie * gv) * Ev
         p = torch.zeros_like(x[:, 0])                          # walls stay at 0
         return Dh, Dv, p
 
@@ -280,7 +291,13 @@ class TransportCFNet(nn.Module):
 
     def _gauss_seidel(self, walk, b, Ch, Cv, p):
         """Spec "Update" step 1, sweep mode: K_rel two-colour Gauss–Seidel
-        sweeps from the current p. Each half-sweep applies, to every free cell
+        sweeps from the current p (omega = 1), or successive
+        over-relaxation (SOR) for omega != 1 — each coordinate update is
+        extrapolated to p_u ← p_u + omega·(p_u^GS − p_u), reaching the same
+        Kirchhoff fixed point in fewer sweeps for 1 < omega < 2 (the
+        per-half-sweep monotonicity of Psi is a Gauss–Seidel property and
+        is not guaranteed under extrapolation; the fixed point is).
+        Each half-sweep applies, to every free cell
         of one checkerboard colour,
 
             p_u ← (b_u + Σ_{v ~ u} C_uv p_v) / (Σ_{v ~ u} C_uv + eps_d·[Σ C = 0])
@@ -320,7 +337,10 @@ class TransportCFNet(nn.Module):
             ps = F.pad(p, (0, 0, 0, 1))[:, 1:, :]              # p of the south neighbour
             pn = F.pad(p, (0, 0, 1, 0))[:, :-1, :]             # p of the north neighbour
             num = b + Ce * pe + Cw * pw + Cs * ps + Cn * pn
-            p = torch.where(upd, num / denom, p)
+            gs = num / denom
+            if self.omega != 1.0:      # SOR: extrapolated coordinate update
+                gs = (1.0 - self.omega) * p + self.omega * gs
+            p = torch.where(upd, gs, p)
             Qh, Qv = self._flows(p, Ch, Cv)
             psi = self._potential_energy(b, p, Ch, Cv).detach()
             res = self._conservation_residual(b, walk, Qh, Qv).detach()
