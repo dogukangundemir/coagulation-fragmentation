@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -75,7 +76,8 @@ def metrics_path(out):
     return Path(out) / METRICS_NAME
 
 
-# ---- helpers (unit-tested in tests/test_run_week2.py) ---
+# ---- helpers (unit-tested in tests/test_run_week2.py and
+# ---- tests/test_effective_params.py) ---
 
 def split_budget(remaining_minutes, remaining_runs):
     """Per-run wall-clock slice: remaining budget shared over remaining runs."""
@@ -117,6 +119,32 @@ def make_model(name):
     if name not in MODEL_SPECS:
         raise ValueError("unknown model %r (allowed: %s)" % (name, ALLOWED_MODELS))
     return CFNet(hid=16, **MODEL_SPECS[name])
+
+
+def effective_n_params(model, x, y, T, pos_weight=None):
+    """Element-wise parameter count that training actually reaches.
+
+    Runs one training-style forward+backward (BCEWithLogits, the
+    cf.train.HYPERPARAMS loss) on the batch (x, y) and counts the
+    individual parameter ENTRIES with a nonzero gradient: raw n_params also
+    counts dead weights that never receive gradient (e.g. the split-flux
+    output head of CF-NoFrag is computed but immediately discarded with
+    fragmentation=False).  The model is first moved to the batch's device
+    (training batches live on cf.train.DEVICE, freshly built models on
+    CPU).  Returns the count; the model is left on that device with zeroed
+    gradients.
+    """
+    model.to(x.device)
+    model.zero_grad(set_to_none=True)
+    if pos_weight is not None:
+        pos_weight = torch.tensor(float(pos_weight), device=x.device)
+    loss = F.binary_cross_entropy_with_logits(model(x, T=T), y,
+                                              pos_weight=pos_weight)
+    loss.backward()
+    n_eff = sum(int(p.grad.ne(0).sum()) for p in model.parameters()
+                if p.grad is not None)
+    model.zero_grad(set_to_none=True)
+    return n_eff
 
 
 def atomic_write_json(path, payload):
@@ -196,8 +224,16 @@ def execute_run(model_name, seed, tag, data, cfg, out_dir, max_minutes, verbose=
     out_dir = Path(out_dir)
     factory = lambda: make_model(model_name)              # noqa: E731
     n_p = n_params(make_model(model_name))
-    print("[%s] %d params, training (max %.1f min)"
-          % (tag, n_p, max_minutes if max_minutes is not None else -1))
+    # effective n_params: one forward+backward on the first real training batch
+    bs = train_mod.HYPERPARAMS["batch_size"]
+    train_ds = data["train"]
+    n = min(bs, len(train_ds))
+    xb = train_ds.x[:n].to(train_mod.DEVICE)
+    yb = train_ds.y[:n].to(train_mod.DEVICE)
+    n_eff = effective_n_params(make_model(model_name), xb, yb, cfg["T_train"],
+                               pos_weight=train_pos_weight(train_ds))
+    print("[%s] %d params (%d effective), training (max %.1f min)"
+          % (tag, n_p, n_eff, max_minutes if max_minutes is not None else -1))
     model, hist = train_mod.train_model(
         factory, T=cfg["T_train"], seed=seed, tag=model_name,
         train_ds=data["train"], val_ds=data["val"],
@@ -211,6 +247,7 @@ def execute_run(model_name, seed, tag, data, cfg, out_dir, max_minutes, verbose=
               "probe9": train_mod.sweep_model(model, data["probe9"], cfg["sweep_T"])}
     settling = train_mod.settling_curve(model, data["test"], max(cfg["sweep_T"]))
     return dict(model=model_name, seed=seed, status="done", n_params=n_p,
+                n_params_effective=n_eff,
                 epochs_done=hist.get("epochs_done"), best_epoch=hist.get("best_epoch"),
                 stopped_early=hist.get("stopped_early", False),
                 train_seconds=hist.get("train_time_s"), test=test_summary,

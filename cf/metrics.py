@@ -3,6 +3,15 @@
 Code copied verbatim from CF_Milestone2_Week1_HF.ipynb Section 4; the only
 change: _metric_test_cases takes the dataset explicitly instead of reading
 the notebook-global `ds["val"]`.
+
+Metric definitions (evaluate_mask):
+- exact: cell-wise match to the label path — the prediction must equal the
+  reference label mask exactly.  This is WONN's board accuracy and the
+  comparable number on Maze-hard.
+- strict: any valid wall-free single simple S->G path of the label's length.
+  On perfect mazes the two coincide (strict == exact); on non-perfect grids
+  where several S->G shortest paths exist (e.g. Maze-hard) strict is more
+  lenient: a different, equally short path scores strict = 1 yet exact = 0.
 """
 import numpy as np
 
