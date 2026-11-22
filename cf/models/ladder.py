@@ -64,8 +64,10 @@ mu       (B, hid, H, W)       mobility (rate-net head)
 logits   (B, H, W)            per-cell path logits; exactly -20.0 in walls
 
 Constants (fixed, not learned): K = 4 rungs, hid = 8 ladders, zeta = 0.5
-joint flux cap, eps = 1e-12 request floor, r_s = 2 slow refresh, n_f = 2
-fast micro-steps, T_train = 8 outer steps.
+joint flux cap, eps = 1e-12 request floor, g_max = 30 energy-profile clamp
+(keeps every Q_k = exp(g_1 - g_k) and every rate ratio exp(g_{k+1} - g_k)
+inside float32 range however steep the learned profile gets), r_s = 2 slow
+refresh, n_f = 2 fast micro-steps, T_train = 8 outer steps.
 """
 import math
 
@@ -82,13 +84,14 @@ MODEL_SPECS = {
 class LadderCFNet(nn.Module):
     def __init__(self, in_ch=3, hid=8, K=4, detailed_balance=True,
                  wall_aware=True, cross_kernel=False,
-                 zeta=0.5, eps=1e-12, r_s=2, n_f=2):
+                 zeta=0.5, eps=1e-12, r_s=2, n_f=2, g_max=30.0):
         super().__init__()
         self.hid, self.K = hid, K
         self.detailed_balance = detailed_balance
         self.wall_aware = wall_aware
         self.cross_kernel = cross_kernel
         self.zeta, self.eps = zeta, eps
+        self.g_max = g_max
         self.r_s, self.n_f = r_s, n_f
         # energy profile g (hid*K channels) + raw mobility (hid channels)
         # in the detailed-balance arm; 2*(K-1)*hid direct rate heads a, b
@@ -172,7 +175,12 @@ class LadderCFNet(nn.Module):
         Detailed-balance arm: a_k = mu (the same mobility on every rung) and
         b_{k+1} = mu Q_k / Q_{k+1} with Q_k = exp(g_1 - g_k), so detailed
         balance a_k Q_1 Q_k = b_{k+1} Q_{k+1} holds for any weights and the
-        gauge Q_1 = 1 is exact. Free-rates arm: a_k and b_{k+1} are direct
+        gauge Q_1 = 1 is exact. The profile g is clamped to [-g_max, g_max]
+        and b is formed in log space, b_{k+1} = mu exp(g_{k+1} - g_k):
+        materialising Q first overflows exp to inf (or underflows to 0) on
+        profiles steeper than ~88 nats, and the division Q_k / Q_{k+1}
+        then yields inf/inf or 0/0 -- NaN rates that poison the rollout
+        through the flux cap. Free-rates arm: a_k and b_{k+1} are direct
         softplus heads (no constraint, hence no energy guarantee).
         """
         B, hid, K, H, W = c.shape
@@ -183,10 +191,10 @@ class LadderCFNet(nn.Module):
         raw = self._conv3(self.rate_net[2], h)
         if self.detailed_balance:
             g = raw[:, : hid * K].reshape(B, hid, K, H, W)
+            g = torch.clamp(g, min=-self.g_max, max=self.g_max)
             mu = F.softplus(raw[:, hid * K:])       # (B, hid, H, W) mobility
-            Q = torch.exp(g[:, :, 0:1] - g)         # gauge Q_1 = exp(0) = 1
             a = mu.unsqueeze(2).expand(B, hid, K - 1, H, W)
-            b = mu.unsqueeze(2) * Q[:, :, :-1] / Q[:, :, 1:]
+            b = mu.unsqueeze(2) * torch.exp(g[:, :, 1:] - g[:, :, :-1])
             return a, b
         a = F.softplus(raw[:, : (K - 1) * hid]).reshape(B, hid, K - 1, H, W)
         b = F.softplus(raw[:, (K - 1) * hid:]).reshape(B, hid, K - 1, H, W)
@@ -237,6 +245,9 @@ class LadderCFNet(nn.Module):
         4. Applied fluxes J_k = lambda (r_k - d_k) and the rung balances
            (J_0 = J_K = 0 by truncation):
            dc_1 = -2 J_1 - sum_{k>=2} J_k,   dc_k = J_{k-1} - J_k.
+           Where lambda = 0 the cap grants no outflow at all, and J is
+           forced to exactly 0: an overflowing request (r_k - d_k = inf)
+           would otherwise turn the product into 0 * inf = NaN.
 
         Positivity is exact: rung j loses at most lambda O_j <= zeta c_j and
         only ever receives. Conservation is exact: sum_k k dc_k = 0
@@ -245,7 +256,10 @@ class LadderCFNet(nn.Module):
         a, b = rates
         B, hid, K, H, W = c.shape
         c1 = c[:, :, 0]                              # (B, hid, H, W) the monomer rung
-        r = a * c1.unsqueeze(2) * c[:, :, :-1]       # r_k = a_k c_1 c_k, k = 1..K-1
+        # r_k = a_k c_1 c_k, k = 1..K-1, with c_1 c_k formed first: the
+        # left-to-right product (a c_1) c_k overflows to inf on extreme
+        # rates and then inf * 0 on an empty rung is NaN, before the cap.
+        r = a * (c1.unsqueeze(2) * c[:, :, :-1])
         d = b * c[:, :, 1:]                          # d_k = b_{k+1} c_{k+1}
         O = torch.cat([(2.0 * r[:, :, 0] + r[:, :, 1:].sum(dim=2)).unsqueeze(2),
                        r[:, :, 1:] + d[:, :, :-1],
@@ -254,6 +268,7 @@ class LadderCFNet(nn.Module):
                             torch.full_like(c, float("inf")))
         lam = torch.clamp(ratio.amin(dim=2), max=1.0)      # (B, hid, H, W)
         J = lam.unsqueeze(2) * (r - d)                      # applied rung fluxes
+        J = torch.where(lam.unsqueeze(2) > 0.0, J, torch.zeros_like(J))
         d1 = -2.0 * J[:, :, 0] - J[:, :, 1:].sum(dim=2)
         c_new = torch.cat([(c[:, :, 0] + d1).unsqueeze(2),
                            c[:, :, 1:-1] + (J[:, :, :-1] - J[:, :, 1:]),

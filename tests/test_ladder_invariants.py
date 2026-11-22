@@ -168,6 +168,92 @@ def test_positivity_extreme_rates_joint_cap_protects(mode, gsign):
         assert drift < 1e-5, f"{mode}: mass drifted by {drift} at t={t}"
 
 
+def test_extreme_random_rates_64_step_rollout_stays_finite_and_conserves_mass():
+    # Regression for the BD-WallAware NaN (results/ladder_train): the
+    # trained run's V trace hit -inf and then NaN from outer step 11 on,
+    # and the flux cap turned overflowing requests into 0 * inf = NaN. A
+    # 64-step rollout under extreme random rates -- log-uniform over
+    # [1e-6, 1e38], i.e. finite rates up to the float32 ceiling -- must
+    # keep every rung and flux finite and non-negative and conserve M:
+    # conservation is an identity of the rung balances, and where the cap
+    # lambda is 0 (an overflowing request) the applied flux is exactly 0.
+    torch.manual_seed(0)
+    model = LadderCFNet()
+    x = random_grid_x(seed=13)
+    with torch.no_grad():
+        c = model.initial_state(x)
+        M0 = model.mass(c)
+        scale = max(1.0, M0.max().item())
+        B, hid, K, H, W = c.shape
+
+        def draw():
+            return 10.0 ** (44.0 * torch.rand(B, hid, K - 1, H, W) - 6.0)
+
+        rates = (draw(), draw())                  # a, b ~ log-U(1e-6, 1e38)
+        for t in range(64):
+            c, J = model.micro_step(c, rates)
+            assert torch.isfinite(c).all(), f"c not finite at step {t + 1}"
+            assert torch.isfinite(J).all(), f"J not finite at step {t + 1}"
+            assert c.min().item() >= NEG_EPS, f"c < 0 at step {t + 1}"
+            drift = (model.mass(c) - M0).abs().max().item() / scale
+            assert drift < 1e-5, f"mass drifted by {drift} at step {t + 1}"
+
+        # Targeted probe of the cap guard: finite rates, a heavy rung 1
+        # (c_1 = 10) and a = 1e38 make the merge request r_1 = a c_1^2
+        # overflow to inf, so the cap is lambda = 0 and the applied flux
+        # must be exactly 0 (0 * inf = NaN without the guard): the state
+        # is unchanged and mass is conserved exactly.
+        c = torch.zeros_like(c)
+        c[:, :, 0] = 10.0
+        a = torch.full((B, hid, K - 1, H, W), 1e38)
+        b = torch.full((B, hid, K - 1, H, W), 1e-6)
+        c_new, J = model.micro_step(c, (a, b))
+        assert torch.isfinite(J).all(), "0 * inf leaked through the cap"
+        assert torch.isfinite(c_new).all()
+        torch.testing.assert_close(c_new, c, atol=0.0, rtol=0)
+        drift = (model.mass(c_new) - model.mass(c)).abs().max().item()
+        assert drift < 1e-5, f"mass drifted by {drift} under the capped step"
+
+
+@pytest.mark.parametrize("gsign", [-1000.0, 1000.0])
+def test_extreme_energy_profile_64_step_rollout_stays_finite(gsign):
+    # The other half of the root cause: an energy profile far outside the
+    # exp-safe range (here +/-1000, way past the g clamp) used to overflow
+    # Q = exp(g_1 - g_k) to inf / underflow it to 0, so the shed rates
+    # b = mu Q_k / Q_{k+1} came out as inf/inf or 0/0 NaN and the whole
+    # rollout (state, fluxes, free energy) went NaN. With the clamp the
+    # rates, the state, the fluxes and V all stay finite over 64 steps.
+    torch.manual_seed(0)
+    model = LadderCFNet()
+    hid, K = model.hid, model.K
+    with torch.no_grad():
+        model.rate_net[2].bias[hid * K:] = 30.0            # mobility ~ 30
+        for h in range(hid):
+            model.rate_net[2].bias[h * K] = 0.0             # g_1 = 0 (gauge)
+            model.rate_net[2].bias[h * K + 1:(h + 1) * K] = gsign
+    x = random_grid_x(seed=13)
+    c0 = model.initial_state(x)
+    M0 = model.mass(c0)
+    scale = max(1.0, M0.max().item())
+    with torch.no_grad():
+        c = c0
+        rates = None
+        for t in range(1, 65):
+            if rates is None or (t - 1) % model.r_s == 0:
+                rates = model.refresh_rates(x, c)
+            a, b = rates
+            assert torch.isfinite(a).all() and torch.isfinite(b).all(), \
+                f"NaN/inf rates at t={t}"
+            c, J = model.fast_phase(c, rates)
+            assert torch.isfinite(c).all(), f"c not finite at t={t}"
+            assert torch.isfinite(J[-1]).all(), f"J not finite at t={t}"
+            assert c.min().item() >= NEG_EPS, f"c < 0 at t={t}"
+            drift = (model.mass(c) - M0).abs().max().item() / scale
+            assert drift < 1e-5, f"mass drifted by {drift} at t={t}"
+            assert np.isfinite(float(model.free_energy(c, rates))), \
+                f"free energy not finite at t={t}"
+
+
 # ------------------------------------------------- 3. detailed balance by construction
 def test_detailed_balance_equilibrium_has_zero_flux():
     # For random (g, mu) outputs and a random activity z, the state

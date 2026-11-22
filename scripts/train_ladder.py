@@ -67,7 +67,10 @@ class LadderStable(LadderCFNet):
     the gradient path is cut exactly where the rates leave that range.
     Mass conservation, positivity and the detailed-balance structure are
     untouched by both guards, and the forward behaviour is identical while
-    the rates stay under the clamp.
+    the rates stay under the clamp. (The root cause of the original NaN --
+    exp overflow in Q = exp(g_1 - g_k) and the 0 * inf in the cap -- is now
+    fixed in LadderCFNet itself: clamped g, log-space shed rates, and a
+    zero-flux guard in the cap; the micro-step below mirrors that guard.)
     """
 
     def refresh_rates(self, x, c):
@@ -78,7 +81,7 @@ class LadderStable(LadderCFNet):
         a, b = rates
         B, hid, K, H, W = c.shape
         c1 = c[:, :, 0]
-        r = a * c1.unsqueeze(2) * c[:, :, :-1]
+        r = a * (c1.unsqueeze(2) * c[:, :, :-1])
         d = b * c[:, :, 1:]
         O = torch.cat([(2.0 * r[:, :, 0] + r[:, :, 1:].sum(dim=2)).unsqueeze(2),
                        r[:, :, 1:] + d[:, :, :-1],
@@ -88,6 +91,7 @@ class LadderStable(LadderCFNet):
                                 torch.full_like(c, float("inf")))
             lam = torch.clamp(ratio.amin(dim=2), max=1.0)
         J = lam.unsqueeze(2) * (r - d)
+        J = torch.where(lam.unsqueeze(2) > 0.0, J, torch.zeros_like(J))
         d1 = -2.0 * J[:, :, 0] - J[:, :, 1:].sum(dim=2)
         c_new = torch.cat([(c[:, :, 0] + d1).unsqueeze(2),
                            c[:, :, 1:-1] + (J[:, :, :-1] - J[:, :, 1:]),
