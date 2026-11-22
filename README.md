@@ -293,23 +293,3 @@ contains `week2_results/wallaware160/` and `figures/maze_paths/` — or take
 an explicit `--ckpt-dir` / `--maze256-csv` flag. Without either, a script
 exits with a message saying so instead of guessing a location; see each
 script's `--help`.
-
-## Course milestones
-
-The project follows the course numbering of the Deep Learning Lab (every
-milestone is graded, so each must stand alone as a deliverable):
-
-| Milestone | Date | Required content |
-|---|---|---|
-| **M1 — Problem + Design** | 11 Nov 2026 (done) | Problem statement, minimal example, definitions: why this architecture, why this data, why not other models. |
-| **M2 — Prototype** | due 9 Dec 2026 | Implementation and explanation of the algorithm, a running example that should solve the problem, baseline, sample of hyperparameters, first test. |
-| **M3 — Experiments** | 20 Jan 2027 | Main algorithm, results on a mock dataset, ongoing results and plan for the final datasets. |
-| Final presentation | after M3 | Full results. |
-
-### Grading
-
-- The course's 10% "notebooks" grade refers to the course's pass/fail
-  exercise notebooks, not to this project's notebook.
-- Milestone 2 itself is worth 20%.
-- The Milestone-2 deliverable is the project notebook (explanation + results)
-  plus the presentation.
