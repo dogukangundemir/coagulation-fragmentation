@@ -11,3 +11,12 @@ presentation_figs/
 .venv/
 /data/
 *.egg-info/
+
+# local secrets and cluster settings (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
