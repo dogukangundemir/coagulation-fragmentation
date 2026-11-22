@@ -121,8 +121,14 @@ coagulation-fragmentation/
 │   └── figures/                 # curriculum_figures.py, style.py
 ├── tests/                       # pytest: invariants, metric self-tests, data checks
 ├── slides/                      # presentation assets (mechanism schematics, equation renders, animated GIFs)
-├── figures/
-│   ├── curriculum_results/      # F1–F3 figures + README.md + data.csv
+├── figures/                     # packet-figure tags (F1-F9) named in each folder's README.md
+│   ├── concept/                 # F1 worked Stage-A step, F2 pipeline diagram (+ data.csv)
+│   ├── mechanism/               # F3 encoder embedding, F5 untrained invariants (+ data.csv)
+│   ├── commitment/              # F4 commitment traces on two test mazes (+ data.csv)
+│   ├── maze_paths/              # F4 thinking steps, F6 path galleries, F9 coverage + failure anatomy (+ data.csv)
+│   ├── main_results/            # F7 curriculum main results (+ data.csv)
+│   ├── curriculum_results/      # F7 budget vs fragmentation, F8 depth extrapolation, settling (no packet tag) (+ data.csv)
+│   ├── depth_by_difficulty/     # F8 unroll depth vs maze difficulty (+ data.csv)
 │   └── maze_hard/               # dataset previews + validation report
 ├── maze_cf.py                   # Milestone-1 self-contained module
 ├── test_maze_cf.py              # Milestone-1 pytest acceptance checks

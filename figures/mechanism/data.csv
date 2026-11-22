@@ -1,0 +1,46 @@
+figure,item,quantity,value,detail
+F3,maze,grid,11 x 11 cells,
+F3,cells,n_total,121,one maze
+F3,cells,n_wall,72,count
+F3,cells,n_free,42,count
+F3,cells,n_path,5,count
+F3,cells,n_goal,1,count
+F3,cells,n_start,1,count
+F3,pca,var_pc1,0.396031,fraction
+F3,pca,var_pc2,0.273278,fraction
+F3,pca,sep_wall_free_sd,1.878,centroid distance in pooled sd units
+F3,pca,sep_path_free_sd,0.456,centroid distance in pooled sd units
+F3,c1_0,min_all_16_ch,0.243757,
+F3,c1_0,max_shown_8_ch,3.99935,
+F3,c1_0,max_ch1,2.71854,
+F3,c1_0,max_ch2,3.99935,
+F3,c1_0,max_ch3,1.95479,
+F3,c1_0,max_ch4,3.49346,
+F3,c1_0,max_ch5,2.3556,
+F3,c1_0,max_ch6,3.5533,
+F3,c1_0,max_ch7,1.33475,
+F3,c1_0,max_ch8,1.61945,
+F5,config,T,64,rollout steps
+F5,config,n_mazes,64,"level-5 test split, first N"
+F5,tolerance,relative_mass_drift_max,1.0e-05,
+F5,tolerance,positivity_min_c,-1.0e-07,
+F5,CF-Full_seed0,max_relative_mass_drift,1.9636e-06,
+F5,CF-Full_seed0,min_c1,4.01039e-15,
+F5,CF-Full_seed0,status,PASS,
+F5,CF-Full_seed1,max_relative_mass_drift,1.20357e-06,
+F5,CF-Full_seed1,min_c1,0,
+F5,CF-Full_seed1,status,PASS,
+F5,CF-Full_seed2,max_relative_mass_drift,7.78434e-07,
+F5,CF-Full_seed2,min_c1,0,
+F5,CF-Full_seed2,status,PASS,
+F5,CF-NoFrag_seed0,max_relative_mass_drift,1.88953e-06,
+F5,CF-NoFrag_seed0,min_c1,0,
+F5,CF-NoFrag_seed0,status,PASS,
+F5,CF-NoFrag_seed1,max_relative_mass_drift,9.22706e-07,
+F5,CF-NoFrag_seed1,min_c1,0,
+F5,CF-NoFrag_seed1,status,PASS,
+F5,CF-NoFrag_seed2,max_relative_mass_drift,1.66507e-06,
+F5,CF-NoFrag_seed2,min_c1,0,
+F5,CF-NoFrag_seed2,status,PASS,
+F5,summary,n_runs,9,includes 3 RecurrentCNN runs (finite logits only)
+F5,summary,n_pass,9,

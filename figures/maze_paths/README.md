@@ -20,7 +20,9 @@ Split: level-5 test split (1000 mazes, 11x11) - the same pipeline as the repo's 
 
 ---
 
-## Figure A - path gallery (`path_gallery_1.png`, `path_gallery_2.png`)
+## Path gallery (`path_gallery_1.png`, `path_gallery_2.png`)
+
+Packet figure: F6
 
 **Selection rule for the eight rows** (level-5 test split, seed-0 models, each at its own T\*): 4 mazes drawn with numpy RNG seed 0; 2 mazes where the five models disagree on the solve verdict (ranked by total wrong cells across models, largest first); the 2 mazes with the longest true path. Ties by maze index, no repeats. Chosen mazes: test maze 269 (random pick), test maze 510 (random pick), test maze 635 (random pick), test maze 848 (random pick), test maze 256 (models disagree), test maze 870 (models disagree), test maze 248 (longest true path), test maze 370 (longest true path).
 
@@ -34,7 +36,9 @@ Split: level-5 test split (1000 mazes, 11x11) - the same pipeline as the repo's 
 
 ---
 
-## Figure B - whole-test-split coverage (`coverage_<model>.png`, one PNG per model)
+## Whole-test-split coverage (`coverage_<model>.png`, one PNG per model)
+
+Packet figure: F9
 
 **Caption.** For every model, all 1000 test mazes as a 25x40 grid of tiles, one tile border colour per outcome at the seed-0 validation-selected T\*: bluish green = solved, vermillion = not solved. The maze itself is drawn inside the tile (walls dark, true path tinted).
 **How to read.** Tiles are sorted by true path length ascending, left to right, top to bottom; the title carries the seed-0 strict solve rate and the mean +- sample sd over the three seeds (each seed at its own T\*, n = 1000 mazes per seed; sd is the sample sd over 3 seeds).
@@ -52,7 +56,9 @@ Split: level-5 test split (1000 mazes, 11x11) - the same pipeline as the repo's 
 
 ---
 
-## Figure C - failure anatomy `failure_anatomy.png`
+## Failure anatomy (`failure_anatomy.png`)
+
+Packet figure: F9
 
 **Caption.** Top row: one histogram per model of the number of wrong cells per maze, over the unsolved test-maze evaluations (3 seeds pooled, each seed at its own validation-selected T\*, n = 3000 evaluations per model = 3 seeds x 1000 mazes). Bottom: strict solve rate by true path length in 6 fixed bins (mean over the 3 seeds, error bars = sample sd, each seed at its own T\*).
 **How to read.** Histogram x = wrong cells (extra + missed, only unsolved evaluations, solved mazes are NOT in the histogram - their count is in the panel caption), y = number of mazes on a log scale, bars binned in steps of 2 wrong cells; each model keeps its Okabe-Ito colour in both panels. Bottom panel: x = true path length (bin ranges and n = mazes per bin are printed under each bin), y = strict solve rate between 0 and 1; error bars are clipped to [0, 1] because the rate cannot leave that range.
@@ -81,10 +87,12 @@ Per-bin strict solve rate (mean over 3 seeds +- sample sd, each seed at its own 
 
 ---
 
-## Figure D - thinking steps `thinking_steps.png`
+## Thinking steps (`thinking_steps.png`)
+
+Packet figure: F4
 
 **Caption.** Two test mazes, the thresholded prediction after t = 1, 2, 4, 8, 12, 16, 24, 32 recurrence steps (one shared rollout per model, read out at each t). Maze rows: CF-Full (hid 16, 160 epochs, trained at fixed T = 8) above RecurrentCNN (hid 22, trained at fixed T = 8, 40 epochs); both seed 0. The left column repeats the ground truth; the maze selection rule: the test maze with the most wrong cells for each of the two models at its own T\* (seed 0, no repeats, ties by maze index) - i.e. one worst case per model under that shared rule, and test maze 256 = worst case of CF-Full (hid 16, 160 epochs, trained at fixed T=8), 38 wrong cells; test maze 113 = worst remaining case of RecurrentCNN (hid 22, 40 epochs, trained at fixed T=8), 6 wrong cells: its outright worst maze, test maze 256 (9 wrong cells), was already picked for CF-Full, 160 epochs, so the shared no-repeats rule moves to the next-worst maze; 3 mazes tie at that wrong-cell count, tie broken by maze index.
-**How to read.** Same colour code as figure A: blue = predicted cell on the true path, vermillion = extra predicted cell, purple = missed true-path cell, black outline = true path, circle = start, star = goal. The number under each panel is the wrong-cell count at that t ("solved" = 0 wrong cells).
+**How to read.** Same colour code as the path gallery: blue = predicted cell on the true path, vermillion = extra predicted cell, purple = missed true-path cell, black outline = true path, circle = start, star = goal. The number under each panel is the wrong-cell count at that t ("solved" = 0 wrong cells).
 
 **Key takeaway.**
 

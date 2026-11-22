@@ -2,21 +2,23 @@
 
 All figures follow up on the maze benchmark (level-5 curriculum mazes — grid size 5, rendered as 11x11 ASCII — with
 train/val/test 4000/1000/1000, trained at T_train=8 unless stated otherwise; three seeds 0, 1, 2 everywhere).
-Every accuracy number shown (Figures F1 and F2) is test **strict accuracy** (a maze counts as strictly solved only if the
-predicted support is exactly the BFS shortest path; on perfect mazes strict == exact); Figure F3 instead plots one settling
+Every accuracy number shown (the training-budget and depth-extrapolation figures) is test **strict accuracy** (a maze counts as strictly solved only if the
+predicted support is exactly the BFS shortest path; on perfect mazes strict == exact); the settling figure instead plots one settling
 measure per model family — residual coagulation-fragmentation flux for the CF models, relative state change for
-RecurrentCNN — two different quantities defined in the F3 section.
-Aggregates are mean +- sample sd over the 3 seeds with individual seed dots shown (Figures F1 and F2); Figure F3 instead
-aggregates with the geometric mean and shows one thin line per seed (see the F3 section for why).
+RecurrentCNN — two different quantities defined in the settling section.
+Aggregates are mean +- sample sd over the 3 seeds with individual seed dots shown (training-budget and depth-extrapolation figures); the settling figure instead
+aggregates with the geometric mean and shows one thin line per seed (see the settling section for why).
 Run codes E1-E4 in this README are cross-references to the source runs only; the figures themselves use plain model
 descriptions.
 All plotted values (means, sds where applicable, and per-seed values) are exported to
 [`data.csv`](data.csv), which sits beside the figures so the plotted values travel with them
 (the source JSONs under `week2_results/` are git-ignored).
 
-## F1 — Training budget x fragmentation
+## Training budget x fragmentation
 
-![F1: test strict at validation-selected T* vs training budget](budget_vs_fragmentation.png)
+Packet figure: F7
+
+![Training budget x fragmentation: test strict at validation-selected T* vs training budget](budget_vs_fragmentation.png)
 
 **Caption.** Test strict accuracy at the validation-selected horizon T* versus training budget
 (40 vs 160 epochs) for CF-Full hid=16 (10,177 effective params) and the matched-capacity
@@ -44,8 +46,8 @@ from 0.398 +- 0.064 (40 ep) to 0.949 +- 0.041 (160 ep); at matched effective cap
 CF-NoFrag improves from 0.361 +- 0.073 (40 ep) to 0.921 +- 0.063 (160 ep). At 160 epochs the
 two overlap (0.949 +- 0.041 vs 0.921 +- 0.063) — fragmentation gives no detectable
 final-accuracy benefit at matched capacity, at most a weak speed effect early in training.
-The variable-T RCNN reference reaches 0.942 +- 0.032 in only 40 epochs (but see F2 for its
-collapse off-horizon).
+The variable-T RCNN reference reaches 0.942 +- 0.032 in only 40 epochs (but see the depth-extrapolation
+figure for its collapse off-horizon).
 
 **Data source.** `week2_results/valT_selection.json` (CF-Full hid=16, 40 ep,
 test_strict_at_T_star per seed) and `week2_results/followups/results.json`
@@ -60,9 +62,11 @@ CF-NoFrag seeds T* = 12, 12, 16, so at 160 epochs the evaluation horizon
 co-varies with training length; the 40-epoch CF-NoFrag seeds all chose the
 same T* = 16 (16, 16, 16).
 
-## F2 — Depth extrapolation (test-time T sweep)
+## Depth extrapolation (test-time T sweep)
 
-![F2: test strict vs test-time T for four models](depth_extrapolation.png)
+Packet figure: F8
+
+![Depth extrapolation: test strict vs test-time T for four models](depth_extrapolation.png)
 
 **Caption.** Test strict accuracy versus test-time unrolling depth T for CF-Full hid=16
 (160 epochs; run E1), CF-NoFrag hid=18 (160 epochs; run E4), RecurrentCNN hid=22 trained with variable
@@ -109,12 +113,14 @@ seed 2 is the *worst* extrapolator for CF-Full (T=24: 0.634, T=32: 0.520, versus
 0.974 / 0.974) but the *best* for CF-NoFrag (T=24: 0.977, T=32: 0.961). The two RCNN variants
 differ only in training-time horizon sampling (fixed T=8 vs T~U{4..16}), so the grey band
 applies to the E3 RCNN alone. CF models were trained 160 epochs here while E3 RCNN was
-trained 40 epochs; per Figure F1 both budgets sit at the same accuracy at their selected T*,
+trained 40 epochs; per the training-budget figure both budgets sit at the same accuracy at their selected T*,
 so the comparison is about extrapolation behavior, not peak accuracy.
 
-## F3 — Settling: settling measures vs unrolling depth
+## Settling: settling measures vs unrolling depth
 
-![F3: settling measures vs unrolling step](settling.png)
+Packet figure: none
+
+![Settling: settling measures vs unrolling step](settling.png)
 
 **Caption.** Per-step settling measures of the trained 40-epoch checkpoints
 (T_train=8) on the first 64 test mazes, unrolled for 32 steps (log scale), for
