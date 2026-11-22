@@ -44,17 +44,20 @@ def predict_probs(model, d, T, bs=500):
     return torch.cat(out).numpy()
 
 
-def evaluate_model(model, d, T, thresh=None):
+def evaluate_model(model, d, T, thresh=None, assert_strict_equals_exact=True):
     thresh = HYPERPARAMS["threshold"] if thresh is None else thresh
     probs = predict_probs(model, d, T)
     rows = [evaluate_mask(probs[k] >= thresh, d.walls[k], d.starts[k], d.goals[k], d.y[k].numpy())
             for k in range(len(d))]
-    assert all(r["strict"] == r["exact"] for r in rows), "perfect maze: strict must equal exact"
+    # the assertion only holds for perfect mazes: Maze-hard grids admit several
+    # shortest paths, so a prediction can be strict-valid yet differ from the label.
+    if assert_strict_equals_exact:
+        assert all(r["strict"] == r["exact"] for r in rows), "perfect maze: strict must equal exact"
     return summarize(rows), rows, probs
 
 
 def train_model(make_model, T, seed, tag, train_ds, val_ds, pos_weight=None,
-                results_dir=None, verbose=True):
+                results_dir=None, verbose=True, assert_strict_equals_exact=True):
     hp = HYPERPARAMS
     if pos_weight is None:
         density = train_ds.y.mean().item()
@@ -83,7 +86,7 @@ def train_model(make_model, T, seed, tag, train_ds, val_ds, pos_weight=None,
             opt.step()
             sched.step()
             total += float(loss.detach()) * len(xb)
-        v, _, _ = evaluate_model(model, val_ds, T)
+        v, _, _ = evaluate_model(model, val_ds, T, assert_strict_equals_exact=assert_strict_equals_exact)
         hist["train_loss"].append(total / len(train_ds))
         hist["val_strict"].append(v["strict"])
         hist["val_iou"].append(v["iou"])
