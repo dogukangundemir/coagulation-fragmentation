@@ -218,13 +218,37 @@ class LadderCFNet(nn.Module):
         """V = sum_k c_k (log(c_k/Q_k) - 1) over all rungs, cells and channels.
 
         The detailed-balance Lyapunov function: it decreases in continuous
-        time under frozen rates. A rung with c_k = 0 contributes 0
-        (0 log 0 = 0 by the clamp on the log argument, not on c itself --
-        which is why the -c term is kept outside).
+        time under frozen rates. Numerically safe in float32:
+        - log Q is accumulated in log space, never taken of a materialized
+          Q. rung_weights chains the product Q_{k+1} = Q_k a_k / b_{k+1};
+          at trained rate scales two consecutive a/b ratios overflow that
+          chain to inf (or underflow to 0), and log Q then made V = -inf
+          where c_k > 0 and NaN on empty rungs (0 * inf through the log
+          difference). Here log Q_1 = 0 (gauge) and log Q_{k+1} =
+          log Q_k + log a_k - log b_{k+1} -- the same recursion, so in the
+          detailed-balance arm log Q_k is the (gauge g_1 = 0) profile -g_k
+          itself, with no exp and no log of an exp anywhere.
+        - the logs are taken of rates floored at the smallest positive
+          normal, so an underflowed rate head (a or b exactly 0, seen at
+          trained seeds) gives a finite log instead of log 0 = -inf and the
+          0/0 the chained division produced.
+        - each increment is clamped to [-2*g_max, 2*g_max], consistent
+          with the g clamp (a ratio exp(g_{k+1} - g_k) spans at most that
+          range); the clamp is a no-op on clamped profiles and keeps log Q
+          finite for any rates, so c * log Q is never 0 * inf.
+        - an empty rung contributes 0: xlogy gives 0 log 0 = 0, and the -c
+          term is kept outside as before.
         """
-        Q = self.rung_weights(rates)
-        cc = torch.clamp(c, min=1e-30)
-        return (c * (torch.log(cc) - torch.log(Q)) - c).sum()
+        a, b = rates
+        tiny = torch.finfo(a.dtype).tiny
+        inc = torch.clamp(torch.log(torch.clamp(a, min=tiny))
+                          - torch.log(torch.clamp(b, min=tiny)),
+                          min=-2.0 * self.g_max, max=2.0 * self.g_max)
+        logQ = [torch.zeros_like(a[:, :, 0])]
+        for i in range(self.K - 1):
+            logQ.append(logQ[-1] + inc[:, :, i])
+        logQ = torch.stack(logQ, dim=2)
+        return (torch.xlogy(c, c) - c * logQ - c).sum()
 
     # ---------------------------------------------------------- fast phase
 
