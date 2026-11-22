@@ -72,6 +72,8 @@ Budget rule (fixed before verdicts): every arm of the Week-2 run is trained unde
 
 **Statement.** For CF-Full with frozen weights, strict test accuracy at T = 16 (and 24, 32 as secondary points) exceeds strict test accuracy at the training horizon T_train = 8 on the level-5 test set; the direction is accuracy that rises when the model runs more iterations than it was trained with.
 
+**Result note (descriptive, post-hoc).** This statement is part of the pre-registration and is left unchanged. In the Week-2 data the pre-registered 16-vs-8 comparison supports the direction (week2_results/h_verdicts.json), but the secondary points do not: mean strict over 3 seeds is 0.2040 at T = 24 and 0.1597 at T = 32, below the T = 8 mean 0.2123; the SUPPORTED verdict covers only the pre-registered 16-vs-8 comparison, and the secondary points carry no verdict.
+
 **Packet citation.** Packet §2.3, p.5, target "Thinking longer": "show that accuracy rises when the trained model runs more iterations than it was trained with"; §0 item 8, p.1, known weakness: "the model is trained only at T = 8 and accuracy drops for larger T (overthinking), despite perfect conservation"; §1.2, p.4, planned task: "Test T = 4, 8, 16 with frozen weights"; §4.3, p.10, notebook section 8: "frozen-weights T-sweep on grid 5 test and unseen grid 7 / 9".
 
 **Metric.** Strict test accuracy at frozen weights via logits_at over sweep_T = [1, 2, 4, 8, 12, 16, 24, 32], mean over 3 seeds.
