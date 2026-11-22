@@ -335,12 +335,40 @@ def test_stochastic_init_wallaware_keeps_exact_zeros_on_walls():
 
 
 # --------------------------------------------------------------- 8. cross kernel
-def test_cross_kernel_corners_exactly_zero():
+KERNEL_CORNERS = ((0, 0), (0, 2), (2, 0), (2, 2))
+
+
+def _backward_corner_grads(model, x):
+    """Grad of sum(logits^2) w.r.t. the four corner taps of every 3x3 conv."""
+    model(x, 8).square().sum().backward()
+    convs = {"encoder": model.encoder,
+             "rate_net[0]": model.rate_net[0],
+             "rate_net[2]": model.rate_net[2]}
+    return {name: {corner: conv.weight.grad[..., corner[0], corner[1]].clone()
+                   for corner in KERNEL_CORNERS}
+            for name, conv in convs.items()}
+
+
+def test_cross_kernel_masks_rate_net_not_encoder():
+    # packet 7.5: with cross_kernel=True ONLY the rate net's two 3x3 convs
+    # are cross-masked; the encoder keeps its full 3x3 kernel by default.
     torch.manual_seed(0)
     model = CFNet(cross_kernel=True)
-    for conv in (model.encoder, model.rate_net[0], model.rate_net[2]):
+    x = synthetic_x(seed=0)
+    corners = _backward_corner_grads(model, x)
+    for name in ("rate_net[0]", "rate_net[2]"):
+        for corner, grad in corners[name].items():
+            assert (grad == 0).all(), f"corner {corner} of {name} got gradient"
+    for corner, grad in corners["encoder"].items():
+        assert (grad != 0).any(), f"encoder corner {corner} is dead (masked?)"
+
+
+def test_cross_kernel_rate_net_weight_corners_exactly_zero():
+    torch.manual_seed(0)
+    model = CFNet(cross_kernel=True)
+    for conv in (model.rate_net[0], model.rate_net[2]):
         w_eff = conv.weight * model.kernel_mask[None, None]
-        for corner in ((0, 0), (0, 2), (2, 0), (2, 2)):
+        for corner in KERNEL_CORNERS:
             assert (w_eff[..., corner[0], corner[1]] == 0).all(), \
                 f"corner {corner} not masked in {conv}"
         with torch.no_grad():  # probe: impulse response through _conv3
@@ -351,3 +379,62 @@ def test_cross_kernel_corners_exactly_zero():
                 "diagonal (corner-kernel) response nonzero"
             assert (out[0, :, 2, 1] - conv.bias).abs().sum() > 0, \
                 "edge response zero: probe cannot detect a removed mask"
+
+
+def test_cross_kernel_encoder_corner_taps_do_not_affect_output():
+    torch.manual_seed(0)
+    model = CFNet(cross_kernel=False).eval()  # encoder never masked when CK off
+    x = synthetic_x(seed=0)
+    with torch.no_grad():
+        base = model(x, 8)
+        for corner in KERNEL_CORNERS:
+            model.encoder.weight.data[..., corner[0], corner[1]] += 0.5
+        pert = model(x, 8)
+    assert not torch.equal(base, pert), \
+        "probe insensitive: encoder corner taps do nothing even unmasked"
+
+
+def test_cross_kernel_rate_net_corner_taps_have_no_effect():
+    torch.manual_seed(0)
+    model = CFNet(cross_kernel=True).eval()
+    x = synthetic_x(seed=0)
+    with torch.no_grad():
+        base = model(x, 16)
+        for conv in (model.rate_net[0], model.rate_net[2]):
+            for corner in KERNEL_CORNERS:
+                conv.weight.data[..., corner[0], corner[1]] += 0.5
+        pert = model(x, 16)
+    assert torch.equal(base, pert), \
+        "rate-net corner taps changed the output despite the cross mask"
+
+
+def test_cross_kernel_encoder_option_restores_encoder_masking():
+    # cross_kernel_encoder=True restores the pre-7.5 behaviour: all 3x3
+    # convolutions (encoder included) are cross-masked when cross_kernel=True.
+    torch.manual_seed(0)
+    model = CFNet(cross_kernel=True, cross_kernel_encoder=True)
+    x = synthetic_x(seed=0)
+    corners = _backward_corner_grads(model, x)
+    for name in ("encoder", "rate_net[0]", "rate_net[2]"):
+        for corner, grad in corners[name].items():
+            assert (grad == 0).all(), f"corner {corner} of {name} got gradient"
+    # and the option really masks the encoder at runtime, not just in grad
+    model.eval()
+    with torch.no_grad():
+        base = model(x, 16)
+        for corner in KERNEL_CORNERS:
+            model.encoder.weight.data[..., corner[0], corner[1]] += 0.5
+        pert = model(x, 16)
+    assert torch.equal(base, pert), \
+        "cross_kernel_encoder=True left encoder corner taps live"
+
+
+def test_cross_kernel_encoder_option_ignored_without_cross_kernel():
+    # the legacy option only matters together with cross_kernel=True
+    torch.manual_seed(0)
+    model = CFNet(cross_kernel=False, cross_kernel_encoder=True)
+    x = synthetic_x(seed=0)
+    corners = _backward_corner_grads(model, x)
+    for corner, grad in corners["encoder"].items():
+        assert (grad != 0).any(), \
+            f"encoder corner {corner} masked though cross_kernel is False"

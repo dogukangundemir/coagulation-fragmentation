@@ -27,12 +27,14 @@ MODEL_SPECS = {
 
 class CFNet(nn.Module):
     def __init__(self, in_ch=3, hid=16, fragmentation=True, bound_flux=True,
-                 wall_aware=False, cross_kernel=False, damping=False):
+                 wall_aware=False, cross_kernel=False,
+                 cross_kernel_encoder=False, damping=False):
         super().__init__()
         self.fragmentation = fragmentation
         self.bound_flux = bound_flux
         self.wall_aware = wall_aware
         self.cross_kernel = cross_kernel
+        self.cross_kernel_encoder = cross_kernel_encoder
         self.damping = damping
         self.encoder = nn.Conv2d(in_ch, hid, 3, padding=1)
         self.rate_net = nn.Sequential(
@@ -49,16 +51,25 @@ class CFNet(nn.Module):
 
     # -- methods added below --
 
-    def _conv3(self, conv, x):
-        # 3x3 conv, optionally restricted to the 4-neighbourhood cross kernel
-        if not self.cross_kernel:
+    def _conv3(self, conv, x, mask=True):
+        """3x3 conv, optionally restricted to the 4-neighbourhood cross kernel.
+
+        With cross_kernel=True the cross-shaped mask [[0,1,0],[1,1,1],[0,1,0]]
+        is applied to the rate net's two 3x3 convolutions only (packet 7.5);
+        `mask` is False for every conv that is not cross-masked. Set
+        cross_kernel_encoder=True to additionally mask the encoder conv in
+        initial_state — this restores the pre-7.5 behaviour (all 3x3
+        convolutions masked) and has no effect when cross_kernel is False.
+        """
+        if not (self.cross_kernel and mask):
             return conv(x)
         w = conv.weight * self.kernel_mask.unsqueeze(0).unsqueeze(0)
         return F.conv2d(x, w, conv.bias, padding=1)
 
     def initial_state(self, x, stochastic=False, generator=None):
         # c1(0) = softplus(encoder(x)); c2(0) = 0
-        M = F.softplus(self._conv3(self.encoder, x))
+        M = F.softplus(self._conv3(self.encoder, x,
+                                   mask=self.cross_kernel_encoder))
         if self.wall_aware:
             M = M * x[:, 0:1]                       # no mass inside walls
         if not stochastic:
