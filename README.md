@@ -202,6 +202,39 @@ accuracy** — as the headline metric: a strict "predicted support equals the
 labelled path" metric would undercount correct solutions whenever the model
 finds a different shortest path than the recorded one.
 
+## CF families
+
+Beyond the trained cell model (Family A) benchmarked above, the repository
+studies coagulation-fragmentation as a family of mechanisms, each with a
+pre-registered specification:
+
+- [`docs/cf_algorithm_families.md`](docs/cf_algorithm_families.md) — survey of
+  seven CF algorithm families: what a particle is, what is conserved, how
+  information moves, and what each one means for solving a maze.
+- [`docs/specs/family_d_transport.md`](docs/specs/family_d_transport.md) —
+  pre-registered specification of transport CF (Family D): conserved mass
+  flows through the free cells from start to goal, so conservation itself
+  does the reasoning on a perfect maze.
+- [`docs/specs/family_b_ladder.md`](docs/specs/family_b_ladder.md) —
+  pre-registered specification of Family B, a Becker-Döring commitment
+  ladder where each cell's confidence grows one rung at a time.
+- [`results/transport_physics/summary.md`](results/transport_physics/summary.md) —
+  results of the physics-only transport arm (zero learned parameters):
+  with the exact solve, strict accuracy is 1.000 at every horizon tested on
+  all three test sets; the physics alone solves the maze.
+- [`figures/transport_mechanism/README.md`](figures/transport_mechanism/README.md) —
+  picture-by-picture walkthrough of how the zero-parameter transport solver
+  finds the path: flow sweeps, pipe thickening, conservation monitors.
+- [`figures/a_vs_d/README.md`](figures/a_vs_d/README.md) — the trained
+  Family-A cell model and the physics-only Family-D arm compared head to
+  head on the same mazes.
+- [`figures/maze_paths/README.md`](figures/maze_paths/README.md) — what every
+  trained model actually outputs: path galleries, per-cell coverage maps
+  and a failure anatomy figure.
+- [`figures/curriculum_results/README.md`](figures/curriculum_results/README.md) —
+  full captions, caveats and per-seed values for the curriculum figures in
+  "Results so far" above.
+
 ## Repository layout
 
 ```
@@ -214,6 +247,10 @@ coagulation-fragmentation/
 │   ├── models/rcnn.py           # RecurrentCNN with logits_at
 │   ├── train.py                 # train/evaluate/sweep/settling helpers
 │   └── utils.py
+├── docs/
+│   ├── cf_algorithm_families.md # CF algorithm-family survey (A–G)
+│   ├── hypotheses.md            # pre-registered hypotheses and verdicts
+│   └── specs/                   # pre-registered family specs (family_b_ladder.md, family_d_transport.md)
 ├── scripts/
 │   ├── check_maze_hard.py       # Maze-hard validation report generator
 │   ├── run_week2.py             # Week-2 training driver
@@ -221,16 +258,23 @@ coagulation-fragmentation/
 │   └── figures/                 # curriculum_figures.py, style.py
 ├── tests/                       # pytest: invariants, metric self-tests, data checks
 ├── slides/                      # presentation assets (mechanism schematics, equation renders, animated GIFs)
-├── figures/                     # packet-figure tags (F1-F9) named in each folder's README.md
-│   ├── concept/                 # F1 worked Stage-A step, F2 pipeline diagram (+ data.csv)
-│   ├── mechanism/               # F3 encoder embedding, F5 untrained invariants (+ data.csv)
+├── results/                     # results summaries from the CF-family arms
+│   └── transport_physics/       # physics-only transport results (summary.md)
+├── figures/                     # packet-figure tags (F1-F10) named in each folder's README.md
+│   ├── a_vs_d/                   # Family A (trained) vs Family D (physics-only) + README.md + data.csv
+│   ├── baselines_reference/     # F10 published-baselines reference plot (+ README.md + data.csv)
 │   ├── commitment/              # F4 part 1 of 2 (other part: figures/maze_paths/thinking_steps.png) commitment traces on two test mazes (+ data.csv)
-│   ├── maze_paths/              # F4 part 2 of 2 (other part: figures/commitment/commitment_maze0.png, commitment_maze248.png) thinking steps, F6 path galleries, F9 coverage + failure anatomy (+ data.csv)
-│   ├── main_results/            # F7 part 1 of 2 (other part: figures/curriculum_results/budget_vs_fragmentation.png) curriculum main results (+ data.csv)
-│   ├── curriculum_results/      # F7 part 2 of 2 (other part: figures/main_results/main_results.png) budget vs fragmentation, F8 part 2 of 2 (other part: figures/depth_by_difficulty/depth_by_difficulty.png) depth extrapolation, settling (no packet tag) (+ data.csv)
+│   ├── concept/                 # F1 worked Stage-A step, F2 pipeline diagram (+ data.csv)
+│   ├── curriculum_results/      # F7 part 2 of 2 (other part: figures/main_results/main_results.png) budget vs fragmentation, F8 part 2 of 2 (other part: figures/depth_by_difficulty/depth_by_difficulty.png) depth extrapolation, settling (no packet tag) (+ README.md + data.csv)
 │   ├── depth_by_difficulty/     # F8 part 1 of 2 (other part: figures/curriculum_results/depth_extrapolation.png) unroll depth vs maze difficulty (+ data.csv, depth_by_difficulty_per_seed.png, per_seed_tally.csv)
+│   ├── ladder_energy/           # Family B commitment ladder: free energy and per-cell size distributions (+ README.md + data.csv)
+│   ├── main_results/            # F7 part 1 of 2 (other part: figures/curriculum_results/budget_vs_fragmentation.png) curriculum main results (+ data.csv)
+│   ├── maze_hard/               # dataset previews + validation report
+│   ├── maze_paths/              # F4 part 2 of 2 (other part: figures/commitment/commitment_maze0.png, commitment_maze248.png) thinking steps, F6 path galleries, F9 coverage + failure anatomy (+ README.md + data.csv)
+│   ├── mechanism/               # F3 encoder embedding, F5 untrained invariants (+ data.csv)
 │   ├── training_budget/         # no packet tag (the packet's budget figure is F7, figures/curriculum_results/budget_vs_fragmentation.png) 40- vs 160-epoch budget curves (+ data.csv)
-│   └── maze_hard/               # dataset previews + validation report
+│   ├── transport_mechanism/      # how the zero-parameter transport solver finds the path + README.md + data.csv
+│   └── voting/                  # Family G best-of-K random-start voting (+ README.md + data.csv)
 ├── maze_cf.py                   # Milestone-1 self-contained module
 ├── test_maze_cf.py              # Milestone-1 pytest acceptance checks
 ├── CF_Looped_Reasoning_Milestone_1.ipynb
@@ -238,6 +282,17 @@ coagulation-fragmentation/
 ```
 
 Run outputs (`week2_results/`, checkpoints) stay local and are git-ignored.
+
+No script carries a hard-coded machine path. Trained checkpoints and the
+per-maze evaluation CSVs live in the main repository's results archive and
+are read-only for this clone: the scripts that need them
+(`scripts/eval_x1_x6.py`, `scripts/eval_voting.py`,
+`scripts/figures/voting.py`, `scripts/figures/a_vs_d.py`) resolve that
+archive from the `CF_MAIN_RESULTS` environment variable — the folder that
+contains `week2_results/wallaware160/` and `figures/maze_paths/` — or take
+an explicit `--ckpt-dir` / `--maze256-csv` flag. Without either, a script
+exits with a message saying so instead of guessing a location; see each
+script's `--help`.
 
 ## Course milestones
 

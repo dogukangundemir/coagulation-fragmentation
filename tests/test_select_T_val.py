@@ -45,7 +45,7 @@ def test_metrics_at_t_reuses_stored_sweeps_and_recorded_test():
         sel.metrics_at_T(run, "probe9", 16, 8)
 
 
-def test_metrics_at_t_recomputes_only_when_model_and_data_are_given():
+def test_metrics_at_t_recomputes_only_when_model_and_data_are_given(monkeypatch):
     run = {"sweeps": {}}
     calls = []
 
@@ -56,12 +56,9 @@ def test_metrics_at_t_recomputes_only_when_model_and_data_are_given():
     class _M:
         pass
 
-    sel.train_mod.sweep_model = fake_sweep
-    try:
-        out = sel.metrics_at_T(run, "probe7", 24, 8, model=_M(), data={"probe7": None})
-        assert out["strict"] == 0.72 and calls == [[24]]
-    finally:
-        sel.train_mod.sweep_model = __import__("cf.train", fromlist=["sweep_model"]).sweep_model
+    monkeypatch.setattr(sel.train_mod, "sweep_model", fake_sweep)
+    out = sel.metrics_at_T(run, "probe7", 24, 8, model=_M(), data={"probe7": None})
+    assert out["strict"] == 0.72 and calls == [[24]]
 
 
 def test_done_runs_groups_by_model_then_seed():

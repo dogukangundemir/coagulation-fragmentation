@@ -1,0 +1,38 @@
+kind,family,horizon,group_or_K,n,value,low95,high95,note
+vote_accuracy,A,T=8,K=1,300,0.616667,0.560502,0.669881,lowest-energy pick of K random starts
+vote_accuracy,A,T=8,K=8,300,0.713333,0.659717,0.761555,lowest-energy pick of K random starts
+vote_accuracy,A,T=8,K=32,300,0.753333,0.701554,0.798707,lowest-energy pick of K random starts
+baseline_accuracy,A,T=8,deterministic,300,0.906667,0.868414,0.934636,"the standard fixed start, no voting"
+per_start_accuracy,A,T=8,all starts,9600,0.607708,,,mean correctness over all 32 x 300 starts
+any_correct_ceiling,A,T=8,all starts,300,0.756667,,,share of mazes with at least one correct start of the 32
+separation_auc,A,T=8,within-maze,,0.976382,,,"P(correct start calmer than wrong start), within mazes"
+energy_pooled,A,T=8,correct,5834,53.065712,,,median 51.934000
+energy_pooled,A,T=8,wrong,3766,80.251003,,,median 79.194553
+vote_accuracy,A,T=12,K=1,300,0.623333,0.567267,0.676281,lowest-energy pick of K random starts
+vote_accuracy,A,T=12,K=8,300,0.716667,0.663185,0.764670,lowest-energy pick of K random starts
+vote_accuracy,A,T=12,K=32,300,0.756667,0.705064,0.801779,lowest-energy pick of K random starts
+baseline_accuracy,A,T=12,deterministic,300,0.993333,0.976022,0.998170,"the standard fixed start, no voting"
+per_start_accuracy,A,T=12,all starts,9600,0.612812,,,mean correctness over all 32 x 300 starts
+any_correct_ceiling,A,T=12,all starts,300,0.756667,,,share of mazes with at least one correct start of the 32
+separation_auc,A,T=12,within-maze,,0.997809,,,"P(correct start calmer than wrong start), within mazes"
+energy_pooled,A,T=12,correct,5883,50.779706,,,median 49.981258
+energy_pooled,A,T=12,wrong,3717,76.386440,,,median 75.959457
+vote_accuracy,D,T=8,K=1,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+vote_accuracy,D,T=8,K=8,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+vote_accuracy,D,T=8,K=32,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+energy_pooled,D,T=8,correct,9600,49030.164682,,,"median 2.0927; all starts correct, none wrong"
+energy_pooled,D,T=8,wrong,0,,,,no wrong starts exist
+start_disagreement,D,T=8,mazes,300,0,,,mazes whose starts disagree on the answer; also 0 mazes mixed
+separation_auc,D,T=8,within-maze,,n/a,,,"undefined: every start is correct, no wrong/correct pairs"
+vote_accuracy,D,T=16,K=1,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+vote_accuracy,D,T=16,K=8,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+vote_accuracy,D,T=16,K=32,300,1.000000,0.987357,1.000000,dissipation vote; the leak vote gives identical accuracy
+energy_pooled,D,T=16,correct,9600,195830716291951.875000,,,"median 2.09389; all starts correct, none wrong"
+energy_pooled,D,T=16,wrong,0,,,,no wrong starts exist
+start_disagreement,D,T=16,mazes,300,0,,,mazes whose starts disagree on the answer; also 0 mazes mixed
+separation_auc,D,T=16,within-maze,,n/a,,,"undefined: every start is correct, no wrong/correct pairs"
+params,A,T=8,raw,10177,10177,,,element count recomputed from the seed-0 checkpoint
+params,A,T=8,effective,9921,9921,,,nonzero-gradient entries after one forward+backward at T=8
+params,D,T=8,learned,0,0,,,physics-only arm: no learned parameters
+budget,A,eval,seconds,,2.25,,,"evaluation only, CPU"
+budget,D,eval,seconds,,84.24,,,"evaluation only, CPU; 3518 solver rows held at their last valid flow"

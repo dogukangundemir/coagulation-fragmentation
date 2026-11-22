@@ -2,21 +2,21 @@
 
 All numbers below are recomputed by `scripts/figures/maze_paths.py` from the stored checkpoints and written to `data.csv` (one row per model, seed, inference depth T and maze); the README numbers are read back from that CSV.
 
-Models (state dicts loaded with the repo's own factories; seed 0 shown in all instance-level figures, three seeds aggregated wherever a mean is shown):
+Models (state dicts loaded with the repo's own factories; seed 0 shown in all instance-level figures, three seeds aggregated wherever a mean is shown; checkpoints live in the main repository's results archive):
 
 | model | params (raw / effective) | training | check-point |
 |---|---|---|---|
-| CF-Full (hid 16, 160 epochs, trained at fixed T=8) | 10177 | fixed T=8, 160 epochs | `week2_results/followups/E1_CF-Full_seed0/1/2.pt` |
-| CF-NoFrag (hid 18, fragmentation disabled, 160 epochs, trained at fixed T=8) | 12745 raw / 9811 effective | fixed T=8, 160 epochs | `week2_results/followups/E4_CF-NoFrag160_seed0/1/2.pt` |
-| RecurrentCNN (hid 22, 40 epochs, rollout depth T drawn uniformly from 4..16 during training) | 9989 | T sampled from 4..16 per batch, 40 epochs | `week2_results/followups/E3_RecurrentCNN_seed0/1/2.pt` |
-| RecurrentCNN (hid 22, 40 epochs, trained at fixed T=8) | 9989 | fixed T=8, 40 epochs | `week2_results/RecurrentCNN_seed0/1/2.pt` |
-| CF-Full (hid 16, 40 epochs, trained at fixed T=8) | 10177 | fixed T=8, 40 epochs | `week2_results/CF-Full_seed0/1/2.pt` |
+| CF-Full (hid 16, 160 epochs, trained at fixed T=8) | 10177 | fixed T=8, 160 epochs | `followups/E1_CF-Full_seed0/1/2.pt` |
+| CF-NoFrag (hid 18, fragmentation disabled, 160 epochs, trained at fixed T=8) | 12745 raw / 9811 effective | fixed T=8, 160 epochs | `followups/E4_CF-NoFrag160_seed0/1/2.pt` |
+| RecurrentCNN (hid 22, 40 epochs, rollout depth T drawn uniformly from 4..16 during training) | 9989 | T sampled from 4..16 per batch, 40 epochs | `followups/E3_RecurrentCNN_seed0/1/2.pt` |
+| RecurrentCNN (hid 22, 40 epochs, trained at fixed T=8) | 9989 | fixed T=8, 40 epochs | `RecurrentCNN_seed0/1/2.pt` |
+| CF-Full (hid 16, 40 epochs, trained at fixed T=8) | 10177 | fixed T=8, 40 epochs | `CF-Full_seed0/1/2.pt` |
 
-Params: raw = state-dict element count; effective = parameters that receive gradients (nonzero-gradient rule, `week2_results/followups/results.json` `param_counts`, one real training batch at T = 8). With fragmentation disabled only the 9811 effective of the 12745 raw CF-NoFrag parameters train, so CF-NoFrag effectively has *fewer* trainable parameters than CF-Full (10177); for every other model raw = effective.
+Params: raw = state-dict element count; effective = parameters that receive gradients (nonzero-gradient rule, `followups/results.json` `param_counts`, one real training batch at T = 8). With fragmentation disabled only the 9811 effective of the 12745 raw CF-NoFrag parameters train, so CF-NoFrag effectively has *fewer* trainable parameters than CF-Full (10177); for every other model raw = effective.
 
-Scoring: a maze counts as **solved (strict)** if the thresholded prediction equals the true-path cell mask exactly (on these perfect mazes strict coincides with exact-match, so a wrong-cell count of zero is equivalent). Every model is evaluated at its validation-selected inference depth T\*; the seed-0 rates at those depths match the stored selection results `week2_results/followups/results.json` and `week2_results/valT_selection.json` to within 0.001 (checked in the script, which exits non-zero on a mismatch). Inputs: walkable mask + start + goal one-hot channels; threshold 0.5 on the sigmoid output.
+Scoring: a maze counts as **solved (strict)** if the thresholded prediction equals the true-path cell mask exactly (on these perfect mazes strict coincides with exact-match, so a wrong-cell count of zero is equivalent). Every model is evaluated at its validation-selected inference depth T\*; the seed-0 rates at those depths match the stored selection results in the results archive (`followups/results.json` and `valT_selection.json`) to within 0.001 (checked in the script, which exits non-zero on a mismatch). Inputs: walkable mask + start + goal one-hot channels; threshold 0.5 on the sigmoid output.
 
-Split: level-5 test split (1000 mazes, 11x11) - the same pipeline as the repo's `run_week2.load_data`.
+Split: level-5 test split (1000 mazes, 11x11) - the same pipeline as the repo's training driver (`load_data`).
 
 ---
 
@@ -30,7 +30,7 @@ Packet figure: F6
 **How to read.** Blue = predicted cell on the true path (correct); vermillion = false positive (extra predicted cell); purple = missed cell (on the true path, not predicted); the number below each panel is the wrong-cell count, "solved" for zero.
 
 **Key takeaway.** On the whole test split, all five models solve the same 408 mazes and none solves 0 mazes; 592 mazes get mixed verdicts (these two gallery rows show such disagreement cases). Across the 8 gallery rows each model solves: cf-full-160ep: 6/8, cf-nofrag-160ep: 7/8, rcnn-varT: 4/8, rcnn-fixedT8: 6/8, cf-full-40ep: 3/8.
-**Data source.** `data.csv` in this folder (rows with split = test, seed = 0, T = the model's T\*); checkpoints listed in the table above (`week2_results/followups/*.pt`, `week2_results/*.pt`).
+**Data source.** `data.csv` in this folder (rows with split = test, seed = 0, T = the model's T\*); checkpoints listed in the table above, in the main repository's results archive (`followups/*.pt`, root-level `*.pt`).
 
 **Caveats.** Single seed (0) per panel; the four random picks are a tiny sample; disagreement rows are selected to be hard and are not typical mazes.
 
@@ -103,7 +103,7 @@ What the two rows show, from the probe rows of data.csv: on test maze 256, CF-Fu
 - Test maze 113, CF-Full, 160 epochs, seed 0: 29 wrong cells at t = 1; first fully solved at t = 12 and stays solved through t = 32 (wrong cells at t = 1, 2, 4, 8, 12, 16, 24, 32: 29, 20, 13, 2, 0, 0, 0, 0).
 - Test maze 113, RecurrentCNN, fixed T=8, seed 0: 29 wrong cells at t = 1; never solves it within 32 steps (best: 6 wrong cells at t = 8) (wrong cells at t = 1, 2, 4, 8, 12, 16, 24, 32: 29, 31, 24, 6, 6, 14, 15, 15).
 
-**Data source.** `data.csv` in this folder: rows with model = cf-full-160ep / rcnn-fixedT8, seed = 0 and T in 1, 2, 4, 8, 12, 16, 24, 32 for the two mazes above (probe = 1 rows; all other rows have probe = 0, the T\*-level evaluation, and are excluded from every rate recomputed here; checkpoints: `week2_results/followups/E1_CF-Full_seed0.pt`, `week2_results/RecurrentCNN_seed0.pt`).
+**Data source.** `data.csv` in this folder: rows with model = cf-full-160ep / rcnn-fixedT8, seed = 0 and T in 1, 2, 4, 8, 12, 16, 24, 32 for the two mazes above (probe = 1 rows; all other rows have probe = 0, the T\*-level evaluation, and are excluded from every rate recomputed here; checkpoints in the results archive: `followups/E1_CF-Full_seed0.pt`, `RecurrentCNN_seed0.pt`).
 
 **Caveats.** Both models were trained with rollout depth 8, so predictions at t > 8 are beyond the training rollout depth (extrapolation for both, in different ways: the RecurrentCNN never saw a longer loop, CF-Full never saw a deeper coagulation-fragmentation process); the two mazes are worst cases selected to be hard (the second under the shared no-repeats rule), not typical test mazes; single seed (0); wrong cells = extra + missed.
 
