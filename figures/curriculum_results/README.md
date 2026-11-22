@@ -12,7 +12,7 @@ Run codes E1-E4 in this README are cross-references to the source runs only; the
 descriptions.
 All plotted values (means, sds where applicable, and per-seed values) are exported to
 [`data.csv`](data.csv), which sits beside the figures so the plotted values travel with them
-(the source JSONs under `week2_results/` are git-ignored).
+(the source JSONs of the main repository's results archive are git-ignored).
 
 ## F1 — Training budget x fragmentation
 
@@ -47,8 +47,8 @@ final-accuracy benefit at matched capacity, at most a weak speed effect early in
 The variable-T RCNN reference reaches 0.942 +- 0.032 in only 40 epochs (but see F2 for its
 collapse off-horizon).
 
-**Data source.** `week2_results/valT_selection.json` (CF-Full hid=16, 40 ep,
-test_strict_at_T_star per seed) and `week2_results/followups/results.json`
+**Data source.** Main repository results archive: `valT_selection.json` (CF-Full hid=16, 40 ep,
+test_strict_at_T_star per seed) and `followups/results.json`
 (E1_CF-Full 160 ep, E2_CF-NoFrag 40 ep, E4_CF-NoFrag160, E3_RecurrentCNN; per-seed
 `test_strict_at_T_star`). Aggregated in `data.csv` under "F1 budget x fragmentation".
 
@@ -69,7 +69,7 @@ same T* = 16 (16, 16, 16).
 T~U{4..16} (40 epochs; run E3), and the RecurrentCNN hid=22 trained at fixed T=8 (40 epochs).
 The dotted grey line at T=8 is the training depth of every fixed-T model in the figure —
 CF-Full (E1), CF-NoFrag (E4) and the fixed-T RecurrentCNN (config `T_train=8` in both
-`week2_results/week2_metrics.json` and `week2_results/followups/results.json`; E3 samples
+the archive's training-metrics JSON and `followups/results.json`; E3 samples
 T ~ U{4..16} per batch instead) — while the grey band (4-16) is the training range of the
 variable-T RecurrentCNN alone. Everything right of T=8 is past the fixed-T models' training depth, and
 right of 16 past every model's, which is what the figure title refers to.
@@ -98,8 +98,8 @@ it — and it does not rescue T=4 (0.054 +- 0.034). CF-Full stays at 0.942 +- 0.
 and 0.929 +- 0.075 at T=16 after 160 epochs, with accuracy declining only gradually by T=24
 (0.852 +- 0.189) and T=32.
 
-**Data source.** `week2_results/followups/results.json` (per-seed `test_strict_by_T` for
-E1_CF-Full, E4_CF-NoFrag160, E3_RecurrentCNN) and `week2_results/week2_metrics.json`
+**Data source.** Main repository results archive: `followups/results.json` (per-seed `test_strict_by_T` for
+E1_CF-Full, E4_CF-NoFrag160, E3_RecurrentCNN) and the training-metrics JSON
 (fixed-T=8 RecurrentCNN per-seed sweep at T in {4, 8, 12, 16, 24, 32}). Aggregated
 in `data.csv` under "F2 depth extrapolation".
 
@@ -143,7 +143,7 @@ geometric-mean relative state change stays order-one throughout, from 1.015 (ste
 1.144 (step 32): its hidden state keeps churning instead of converging to a fixed point.
 
 **Data source.** `settling` arrays (one value per step, steps 1-32) of the 40-epoch trained
-runs in `week2_results/week2_metrics.json`, computed by `cf/train.py:settling_curve` on the
+runs in the results archive's training-metrics JSON, computed by `cf/train.py:settling_curve` on the
 first 64 test mazes with the trained weights. Aggregated in `data.csv` under "F3 settling":
 the mean column holds the geometric mean over the 3 seeds at that step, the sd column is
 empty (no sd is shown in the figure), and the seed0-2 columns hold the per-seed values.
@@ -164,8 +164,8 @@ families, not absolute values.
 python scripts/figures/curriculum_figures.py
 ```
 
-Reads `week2_results/followups/results.json`, `week2_results/valT_selection.json` and
-`week2_results/week2_metrics.json` (relative to the repository root, or pass `--root`),
+Reads `followups/results.json`, `valT_selection.json` and the training-metrics JSON of the
+main repository's results archive (under the repository root, or pass `--root`),
 and rewrites `budget_vs_fragmentation.png`, `depth_extrapolation.png`, `settling.png` and
 `data.csv` in this folder. The Okabe-Ito colourblind-safe palette and rcParams live in
 `scripts/figures/style.py`, shared by all figure scripts.

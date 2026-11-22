@@ -564,4 +564,6 @@ per outer step dominates; where the fixed adaptation drives a maze's
 solve past the conservation tolerance its flow is held at the last
 conservation-valid value, which on a tree is the unique conserved flow).
 Per-horizon tables and the full protocol: `results/transport_physics/summary.md`.
+Figure-by-figure walkthrough of the mechanism (flow sweeps, pipe thickening,
+conservation monitors): `figures/transport_mechanism/README.md`.
 
