@@ -1,6 +1,6 @@
 # CF Algorithms: Mechanisms, Variants and What They Mean
 
-Nov 22, 2026 · @dogukan
+Nov 22, 2026
 
 "Coagulation-fragmentation" is not one algorithm but a family of mechanisms. They differ in what a particle is, which particles may merge, how clusters break, what is conserved, and how information moves. This document describes seven CF algorithm families in depth: the physics behind each, its update rule, what it means for solving a maze, what it guarantees, and what can go wrong. It then compares them with each other; conventional baselines play no role here.
 
