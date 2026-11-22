@@ -10,11 +10,30 @@ variable:
   <baselines-dir>/wonn_tools/out/train_log.txt
                     (only for the raw parameter count; "not recorded" if absent)
 
+Also read when present (relative to the baselines directory):
+  akorn_tools/out/eval_100ep_T16.log, akorn_tools/out/eval_100ep_T128.log
+                    (the re-run official evals the record points to via
+                    eval.full_stdout_logs; re-read as a cross-check and
+                    quoted in the unseeded re-eval footnote)
+  akorn_tools/out/_export_id.log, akorn_tools/out/_export_ood.log
+                    (exact-board accuracy of the exported prediction
+                    grids; the export cross-check of the final EMA
+                    checkpoint)
+  akorn_tools/out/train_reduced.log
+                    (surviving training log; its last epoch and final
+                    raw/EMA test accuracies give the provenance of the
+                    raw (non-EMA) ID value in the run record)
+The run record quotes the superseded earlier-revision eval values in its
+notes; those are parsed for the re-eval-drift footnote (unseeded GPU
+re-evals of the same checkpoint are nondeterministic).
+
 If neither --baselines-dir nor CF_BASELINES_DIR is set, no run records are
 read: the figure and data.csv are regenerated from the tracked
 figures/baselines_reference/data.csv only (the script says so on stdout);
 fields that live only in the run records (commit hashes, export
-cross-check) then read "not recorded".
+cross-check) then read "not recorded", while the re-eval and surviving-log
+numbers fall back to their data.csv rows (written there on the last
+record-based run), so the footnotes regenerate.
 
 Writes figures/baselines_reference/{baselines_reference.png, data.csv}.
 
@@ -25,16 +44,22 @@ Run (CPU only):
 Published reference numbers are constants below, cited to the tables they
 come from; every number of ours is recomputed from the run records at run
 time (or, in the fallback without a baselines directory, from the tracked
-data.csv). If an OOD T_eval=128 result is added to the AKOrN record later, the
-script picks it up automatically on re-run (find_akorn_t128 sweeps the
-record for it, skipping paper-reference entries); until then the cell reads
-"not run" -- nothing in the figure or the CSV is estimated.
+data.csv). Both AKOrN record layouts are supported: the current one holds
+eval.board_accuracy_T16 and eval.board_accuracy_T_eval_128 (older ones used
+eval.board_accuracy); an OOD number missing from those is swept for by
+find_akorn_t128 (skipping paper-reference entries) and otherwise reads "not
+run" -- nothing in the figure or the CSV is estimated.
 
-Labels: both our rows are reduced-budget pipeline checks over the official
-code, not reproductions. Both are single runs, hence "preliminary" (fewer
-than 3 seeds, no seed spread). The layout is checked at render time: no
-text box may overlap any other text box or any drawn line/patch, and every
-cell must stay inside its column band.
+Labels: our AKOrN row carries the run's own budget. When the record shows
+the official config run to the full official epoch count (epochs_run >=
+official_epochs), the verdict reads "full official budget, 1 seed
+(preliminary)" -- the record states a single unseeded seed, so it stays
+preliminary; below the full count the verdict stays "not a reproduction".
+The WONN row is a reduced-budget pipeline check and stays "not a
+reproduction". Both are single runs, hence "preliminary" (fewer than 3
+seeds, no seed spread). The layout is checked at render time: no text box
+may overlap any other text box or any drawn line/patch, every cell must
+stay inside its column band, and the content must fit the canvas height.
 """
 
 import argparse
@@ -139,6 +164,43 @@ def find_akorn_t128(record):
     return pct, seg
 
 
+def dig_any(obj, *paths):
+    """First non-None dig() over several alternative key paths."""
+    for path in paths:
+        v = dig(obj, *path)
+        if v is not None:
+            return v
+    return None
+
+
+def to_pct(v):
+    """Record fraction-or-percent leaf -> percent float, or None."""
+    if v is None:
+        return None
+    return v * 100.0 if v <= 1.5 else v
+
+
+def akorn_t128_id(akorn):
+    """Our ID board accuracy at T_eval=128 in %, or None ("not run")."""
+    return to_pct(dig_any(
+        akorn,
+        ("eval", "board_accuracy", "id_T128"),
+        ("eval", "board_accuracy_T_eval_128", "id_T128"),
+    ))
+
+
+def akorn_t128_ood(akorn):
+    """Our OOD board accuracy at T_eval=128 in %, or None ("not run")."""
+    v = dig_any(
+        akorn,
+        ("eval", "board_accuracy", "ood_T128"),
+        ("eval", "board_accuracy_T_eval_128", "ood_T128"),
+    )
+    if v is not None:
+        return to_pct(v)
+    return find_akorn_t128(akorn)[0]
+
+
 def wonn_raw_params(train_log):
     if not train_log or not Path(train_log).is_file():
         return None
@@ -147,6 +209,82 @@ def wonn_raw_params(train_log):
     if not match:
         return None
     return int(match.group(1).replace(",", ""))
+
+
+def akorn_surviving_logs(baselines_dir):
+    """Surviving AKOrN logs next to the run record.
+
+    Returns id16/ood16/id128/ood128: the Vote accuracy values of the
+    re-run official evals (first block = ID, second = OOD of each
+    eval_100ep_T*.log), exp_id/exp_ood (n/tot): the exact-board accuracy
+    and grid counts of the prediction-grid export re-checks
+    (_export_id.log / _export_ood.log), and log_epoch/log_raw/log_ema:
+    the last epoch and the final raw/EMA test accuracies of
+    train_reduced.log. Each key reads None when its file is missing or
+    holds no match -- nothing is estimated."""
+    sv = dict(id16=None, ood16=None, id128=None, ood128=None,
+              exp_id=None, exp_id_n=None, exp_id_tot=None,
+              exp_ood=None, exp_ood_n=None, exp_ood_tot=None,
+              log_epoch=None, log_raw=None, log_ema=None)
+    out_dir = Path(baselines_dir) / "akorn_tools" / "out"
+    for fname, keys in (("eval_100ep_T16.log", ("id16", "ood16")),
+                        ("eval_100ep_T128.log", ("id128", "ood128"))):
+        f = out_dir / fname
+        if not f.is_file():
+            continue
+        accs = re.findall(r"Vote accuracy:\s*([01]\.\d+)",
+                          f.read_text(errors="replace"))
+        for key, acc in zip(keys, accs):
+            sv[key] = float(acc)
+    for fname, vkey, nkey, tkey in (("_export_id.log", "exp_id",
+                                     "exp_id_n", "exp_id_tot"),
+                                    ("_export_ood.log", "exp_ood",
+                                     "exp_ood_n", "exp_ood_tot")):
+        f = out_dir / fname
+        if not f.is_file():
+            continue
+        m = re.search(r"board_acc = ([01]\.\d+) \((\d+)/(\d+)\)",
+                      f.read_text(errors="replace"))
+        if m:
+            sv[vkey] = float(m.group(1))
+            sv[nkey] = int(m.group(2))
+            sv[tkey] = int(m.group(3))
+    f = out_dir / "train_reduced.log"
+    if f.is_file():
+        text = f.read_text(errors="replace")
+        eps = re.findall(r"Epoch \[(\d+)/", text)
+        raw = re.findall(r"\[Test\]: Total boards:\d+, Accuracy: ([01]\.\d+)",
+                         text)
+        ema = re.findall(
+            r"\[EMA Test\]: Total boards:\d+, Accuracy: ([01]\.\d+)", text)
+        if eps:
+            sv["log_epoch"] = int(eps[-1])
+        if raw:
+            sv["log_raw"] = float(raw[-1])
+        if ema:
+            sv["log_ema"] = float(ema[-1])
+    return sv
+
+
+def akorn_prior_revision(record):
+    """Earlier-record eval values quoted in the refreshed run record's
+    eval notes ("where the earlier record differed (...), the logs
+    win"), or all None when the record quotes no such sentence."""
+    out = dict(pr_id16=None, pr_ood16=None, pr_ood128=None)
+    strings = []
+    for holder in (dig(record, "eval", "notes"), dig(record, "notes")):
+        if isinstance(holder, str):
+            strings.append(holder)
+        elif isinstance(holder, list):
+            strings += [s for s in holder if isinstance(s, str)]
+    text = " ".join(strings)
+    m = re.search(r"earlier record differed \(id_T16 ([01]\.\d+), "
+                  r"ood_T16 ([01]\.\d+), ood_T128 ([01]\.\d+)\)", text)
+    if m:
+        out["pr_id16"] = float(m.group(1))
+        out["pr_ood16"] = float(m.group(2))
+        out["pr_ood128"] = float(m.group(3))
+    return out
 
 
 def pct1(x):
@@ -161,29 +299,77 @@ def pct_s(x):
     return "?" if x is None else f"{x:.1f}"
 
 
-def build(akorn, wonn, t128, params_raw=None):
-    """All figure/CSV content, as plain strings recomputed from the records."""
+def build(akorn, wonn, t128, params_raw=None, surviving=None):
+    """All figure/CSV content, as plain strings recomputed from the records.
+
+    t128 = (id_pct, ood_pct): our AKOrN board accuracies at T_eval=128 in
+    percent, either value None when the record does not hold it ("not run").
+    surviving = akorn_surviving_logs() (or the same keys read back from
+    data.csv): post-record re-eval values of the final EMA checkpoint and
+    the tail of the surviving training log, for the drift footnote and the
+    provenance note on the raw (non-EMA) ID value.
+    """
+    ak_id128, ak_ood128 = t128
+    sv = dict(id16=None, ood16=None, id128=None, ood128=None,
+              exp_id=None, exp_id_n=None, exp_id_tot=None,
+              exp_ood=None, exp_ood_n=None, exp_ood_tot=None,
+              log_epoch=None, log_raw=None, log_ema=None,
+              pr_id16=None, pr_ood16=None, pr_ood128=None)
+    if surviving:
+        for k, v in surviving.items():
+            if v is not None:
+                sv[k] = v
     ak_hw = (dig(akorn, "gpu") or "").replace("NVIDIA GeForce ", "")
     wn_gpu = dig(wonn, "gpu", "model") or ""
     seed_w = dig(wonn, "seed")
     bs = dig(wonn, "config", "batchsize")
     bs_off = dig(wonn, "config", "official_batchsize")
 
-    ak_id = dig(akorn, "eval", "board_accuracy", "id_T16")
-    ak_ood = dig(akorn, "eval", "board_accuracy", "ood_T16")
-    ak_raw_id = dig(akorn, "eval", "raw_model_id_T16_from_train_log")
+    ak_id = dig_any(akorn, ("eval", "board_accuracy", "id_T16"),
+                    ("eval", "board_accuracy_T16", "id_T16"))
+    ak_ood = dig_any(akorn, ("eval", "board_accuracy", "ood_T16"),
+                     ("eval", "board_accuracy_T16", "ood_T16"))
+    ak_raw_id = dig_any(
+        akorn,
+        ("eval", "raw_model_id_T16_from_train_log"),
+        ("eval", "raw_model_id_T16_from_train_log_epoch_100"),
+    )
+    # only the stale records carried a prediction-export cross-check; the
+    # 100-epoch record exports no predictions for the final checkpoint
     ak_x_id = dig(akorn, "eval", "export_cross_check", "id_T16")
     ak_x_ood = dig(akorn, "eval", "export_cross_check", "ood_T16")
+    ak_pub_id128 = dig(akorn, "eval", "official_paper_reference", "id")
 
     wn_board = dig(wonn, "eval", "ema_model", "board_acc")
     wn_f1 = dig(wonn, "eval", "ema_model", "path_f1")
     wn_board_raw = dig(wonn, "eval", "model.pth", "board_acc")
     wn_f1_raw = dig(wonn, "eval", "model.pth", "path_f1")
 
-    ak_hours = f"{dig(akorn, 'training_wall_minutes'):.1f}" if dig(
-        akorn, "training_wall_minutes") is not None else "not recorded"
+    ak_min = dig(akorn, "training_wall_minutes")
+    ak_cont_min = dig(akorn, "continuation_wall_minutes")
+    if ak_min is not None and ak_cont_min is not None:
+        ak_hours = f"{ak_min + ak_cont_min:.1f}"
+    elif ak_min is not None:
+        ak_hours = f"{ak_min:.1f}"
+    else:
+        ak_hours = "not recorded"
     wn_hours = dig(wonn, "train_wall_minutes")
     wn_hours = f"{wn_hours:.1f}" if wn_hours is not None else "not recorded"
+
+    ak_seeds_info = dig(akorn, "seeds")
+    if isinstance(ak_seeds_info, dict) and ak_seeds_info.get("seeds_run"):
+        ak_seed_n = ak_seeds_info["seeds_run"]
+        ak_seed_lbl = f"{ak_seed_n} run (unseeded)"
+    else:
+        ak_seed_n = 1
+        ak_seed_lbl = "1 run (seed not recorded)"
+    ak_run = dig(akorn, "epochs_run")
+    ak_off = dig(akorn, "official_epochs")
+    # drop "not a reproduction" only when the record shows the official
+    # config trained to the full official epoch count (single seed recorded,
+    # and the figure says so)
+    ak_full = (isinstance(ak_run, int) and isinstance(ak_off, int)
+               and ak_run >= ak_off and bool(dig(akorn, "official_command")))
 
     if params_raw is None:
         params_raw = wonn_raw_params(ARGS.wonn_train_log)
@@ -202,31 +388,44 @@ def build(akorn, wonn, t128, params_raw=None):
     )
     ak_ours_source = (
         f"this repo, official code\n"
-        f"{dig(akorn, 'epochs_run')}/{dig(akorn, 'official_epochs')} epochs, "
-        f"{ak_hours} min\n"
-        f"1 run (seed not recorded)\n"
+        f"{ak_run}/{ak_off} epochs, {ak_hours} min\n"
+        f"{ak_seed_lbl}\n"
         f"{ak_hw}"
     )
     ak_ours_label_run = (
-        f"{dig(akorn, 'epochs_run')}/{dig(akorn, 'official_epochs')} epochs, "
-        f"{ak_hours} min, 1 run (seed not recorded)"
+        f"{ak_run}/{ak_off} epochs, {ak_hours} min, {ak_seed_lbl}"
     )
     ak_ours_config = (
         "T=16, lr 1e-3, global learnable\n"
         "omega (init 0.5), EMA ckpt,\n"
-        "official eval script at T=16;\n"
-        "n = 1,000 ID / 18,000 OOD puzzles"
+        "official eval at T=16 and\n"
+        "T_eval=128; n = 1,000 ID /\n"
+        "18,000 OOD puzzles"
     )
-    ak_t128_val = "not run" if t128[0] is None else f"{t128[0]:.1f}"
-    title = (
-        "Baselines at a reduced budget: AKOrN Sudoku ID "
-        f"{pct1(ak_id)} vs published {PUB_AKORN_ID_T16[0]} \u00b1 "
-        f"{PUB_AKORN_ID_T16[1]} at T=16 (ours: "
-        f"{dig(akorn, 'epochs_run')}/{dig(akorn, 'official_epochs')} epochs);\n"
-        f"WONN maze-hard {pct1(wn_board)} vs published {PUB_WONN_BOARD[0]} "
-        f"(ours: {dig(wonn, 'epochs_trained')}/{dig(wonn, 'official_epochs')} "
-        f"epochs) \u2014 pipeline checks, not reproductions"
-    )
+    ak_t128_val = "not run" if ak_ood128 is None else f"{ak_ood128:.1f}"
+    ak_verdict = (
+        f"full official\nbudget, {ak_seed_n} seed\n(preliminary)"
+        if ak_full else "not a\nreproduction")
+    ak_budget_word = "full" if ak_full else "reduced"
+    if ak_ood128 is None:
+        title_l1 = (
+            f"AKOrN Sudoku, {ak_budget_word} {ak_run}/{ak_off} epochs, "
+            f"single seed: OOD at T_eval=128 not run;")
+    else:
+        within = (abs(ak_ood128 - PUB_AKORN_OOD_T128[0])
+                  <= PUB_AKORN_OOD_T128[1])
+        verdict_word = "matches" if within else "stays below"
+        title_l1 = (
+            f"AKOrN Sudoku, {ak_budget_word} {ak_run}/{ak_off} epochs, "
+            f"single seed: OOD at T_eval=128 {ak_ood128:.1f} vs published "
+            f"{PUB_AKORN_OOD_T128[0]} \u00b1 {PUB_AKORN_OOD_T128[1]} "
+            f"\u2014 {verdict_word};")
+    title_l2 = (
+        f"WONN maze-hard at {dig(wonn, 'epochs_trained')}/"
+        f"{dig(wonn, 'official_epochs')} epochs: board acc "
+        f"{pct1(wn_board)} vs published {PUB_WONN_BOARD[0]} at K=1, "
+        f"T=24 \u2014 pipeline check only")
+    title = title_l1 + "\n" + title_l2
 
     panel_a = dict(
         header="A. AKOrN \u2014 Sudoku (official code, commit "
@@ -250,9 +449,10 @@ def build(akorn, wonn, t128, params_raw=None):
             dict(strip=BLUE, cells=[
                 ak_ours_source, ak_ours_config,
                 f"{pct1(ak_id)}", f"{pct1(ak_ood)}",
-                ak_t128_val, "not a\nreproduction"],
+                ak_t128_val, ak_verdict],
                 styles=["ours", "ours", "val", "val",
-                        ("missing" if t128[0] is None else "val"), "verdict"]),
+                        ("missing" if ak_ood128 is None else "val"),
+                        "verdict"]),
         ])
 
     # ---------------- figure panel B: WONN, maze-hard -----------------
@@ -314,25 +514,95 @@ def build(akorn, wonn, t128, params_raw=None):
                 styles=["ours", "ours", "val", "val", "ours", "verdict"]),
         ])
 
+    if ak_x_id is not None and ak_x_ood is not None:
+        ak_x_txt = (f"export cross-check {pct1(ak_x_id)} ID / "
+                    f"{pct1(ak_x_ood)} OOD")
+    elif sv["exp_id"] is not None or sv["exp_ood"] is not None:
+        parts = []
+        if sv["exp_id"] is not None:
+            counts = ("" if sv["exp_id_n"] is None
+                      else f" ({sv['exp_id_n']}/{sv['exp_id_tot']} grids)")
+            parts.append(f"ID {pct1(sv['exp_id'])}{counts}")
+        if sv["exp_ood"] is not None:
+            counts = ("" if sv["exp_ood_n"] is None
+                      else f" ({sv['exp_ood_n']}/{sv['exp_ood_tot']} grids)")
+            parts.append(f"OOD {pct1(sv['exp_ood'])}{counts}")
+        ak_x_txt = ("export cross-check from the exported prediction "
+                    "grids: " + " / ".join(parts))
+    else:
+        ak_x_txt = "no export cross-check readable ('not run')"
+    ak_id128_txt = "not run" if ak_id128 is None else f"{ak_id128:.1f}"
+    ak_pub_id128_txt = ak_pub_id128 if ak_pub_id128 else "not stated"
+
+    def rtxt(v):
+        return "not run" if v is None else pct1(v)
+
+    if (sv["log_epoch"] is not None and isinstance(ak_run, int)
+            and sv["log_epoch"] < ak_run):
+        ak_raw_note = (
+            f"a run-record value: the surviving training log ends at "
+            f"epoch {sv['log_epoch']} (final raw {rtxt(sv['log_raw'])} / "
+            f"EMA {rtxt(sv['log_ema'])}), so the epoch-{ak_run} raw value "
+            f"cannot be re-derived from preserved logs")
+    else:
+        ak_raw_note = ("a run-record value (the training log of the "
+                       "final epochs is not preserved)")
+
+    def drift_pp(rc, rec):
+        a, b = to_pct(rc), to_pct(rec)
+        return None if a is None or b is None else abs(a - b)
+
+    prior_parts, drifts = [], []
+    for label, rc, rec in (("ID at T=16", sv["pr_id16"], ak_id),
+                           ("OOD at T=16", sv["pr_ood16"], ak_ood),
+                           ("OOD at T_eval=128", sv["pr_ood128"], ak_ood128)):
+        if rc is None:
+            continue
+        prior_parts.append(f"{label} {pct1(rc)}")
+        d = drift_pp(rc, rec)
+        if d is not None:
+            drifts.append(d)
+    drift_txt = (
+        "AKOrN unseeded re-evals: the plotted values are the record's "
+        "full-stdout re-run official eval of the final EMA checkpoint "
+        "(eval_100ep_T16.log / eval_100ep_T128.log in the baselines "
+        "directory), re-read here from those logs; re-evaluating that "
+        "unseeded checkpoint is nondeterministic -- "
+        + ((f"an earlier record revision for the same checkpoint read "
+            f"{', '.join(prior_parts)}"
+            + (f", up to {max(drifts):.1f} pp of run-to-run drift"
+               if drifts else "")
+            + ", so single-run differences of that size are re-eval "
+            "noise, not seed spread.")
+           if prior_parts
+           else "the record quotes no superseded revision ('not run')."))
+
     foot = [
         "Published \u00b1 values are the sd reported by the papers (n not "
         "stated in the cited tables); our numbers are single runs (AKOrN: "
-        "seed not recorded; WONN: seed "
-        f"{seed_w}) \u2014 preliminary, no seed spread, small differences "
-        "are inconclusive.",
-        f"AKOrN ours: EMA checkpoint, official eval script; raw (non-EMA) "
-        f"model ID {pct1(ak_raw_id)} at T=16 (training log); export "
-        f"cross-check {pct1(ak_x_id)} ID / {pct1(ak_x_ood)} OOD.",
+        f"{ak_seed_lbl}; WONN: seed {seed_w}) \u2014 preliminary, no seed "
+        "spread, small differences are inconclusive.",
+        f"AKOrN ours: final EMA checkpoint, official eval script; raw "
+        f"(non-EMA) model ID {pct1(ak_raw_id)} at T=16 is {ak_raw_note}; "
+        f"our ID at T_eval=128 is {ak_id128_txt} (paper reference quoted "
+        f"in the run record: {ak_pub_id128_txt}); {ak_x_txt}.",
+        drift_txt,
+        "AKOrN training deviations recorded in the run record: run split "
+        "into two phases (epochs 1-40, then a minimal resume wrapper "
+        "continued 41-100 restoring model, Adam and EMA state; no epoch "
+        "restarted), --checkpoint_every=10, --num_workers=0 (Windows), no "
+        "seed fixed (single continuous unseeded run).",
         "WONN ours: exact full-grid match required, so path F1 "
         f"{pct1(wn_f1)} with {pct1(wn_board)} board acc; non-EMA model.pth "
         f"reached path F1 {pct1(wn_f1_raw)}, board still "
         f"{pct1(wn_board_raw)}; params "
         + (f"{params_raw:,} raw" if params_raw is not None
            else "not recorded") + ", effective not measured.",
-        "Hardware (our runs): NVIDIA RTX 3070 Ti, 8 GB; reduced-budget "
-        "checks of the official code (AKOrN commit "
+        "Hardware (our runs): NVIDIA RTX 3070 Ti, 8 GB; our own runs of "
+        "the official code (AKOrN commit "
         f"{dig(akorn, 'commit_hash')[:7]}, WONN commit "
-        f"{dig(wonn, 'commit_hash')}) \u2014 not reproductions.",
+        f"{dig(wonn, 'commit_hash')}); the published rows were not run "
+        "by us.",
         "'not run' or 'not stated in table' = the number was never measured "
         "by us / not given in the cited paper table; nothing in the figure "
         "is estimated.",
@@ -357,6 +627,10 @@ def build(akorn, wonn, t128, params_raw=None):
         csvrow("akorn_sudoku", "published", "OOD board acc @ T_eval=128",
                f"{PUB_AKORN_OOD_T128[0]}", f"{PUB_AKORN_OOD_T128[1]}",
                ak_pub_run, "AKOrN paper, Table 19, p. 36"),
+        csvrow("akorn_sudoku", "published", "ID board acc @ T_eval=128",
+               (ak_pub_id128 or "not stated"), "", ak_pub_run,
+               "akorn_tools/out/run_record.json (paper reference quoted "
+               "there)"),
         csvrow("akorn_sudoku", "ours", "ID board acc @ T=16", pct1(ak_id),
                "", ak_ours_label_run + ", preliminary",
                "akorn_tools/out/run_record.json"),
@@ -364,12 +638,75 @@ def build(akorn, wonn, t128, params_raw=None):
                "", ak_ours_label_run + ", preliminary",
                "akorn_tools/out/run_record.json"),
         csvrow("akorn_sudoku", "ours", "OOD board acc @ T_eval=128",
-               (t128[0] and f"{t128[0]:.1f}") or "not run", "",
+               ak_t128_val, "",
                ak_ours_label_run + ", preliminary",
+               "akorn_tools/out/run_record.json"),
+        csvrow("akorn_sudoku", "ours", "ID board acc @ T_eval=128",
+               (f"{ak_id128:.1f}" if ak_id128 is not None else "not run"),
+               "", ak_ours_label_run + ", preliminary",
                "akorn_tools/out/run_record.json"),
         csvrow("akorn_sudoku", "ours", "raw (non-EMA) ID board acc @ T=16",
                pct1(ak_raw_id), "", ak_ours_label_run,
-               "akorn_tools/out/run_record.json (training log value)"),
+               "akorn_tools/out/run_record.json (survives only in the run "
+               "record; the preserved training log does not reach the "
+               "final epoch)"),
+        csvrow("akorn_sudoku", "ours",
+               "ID board acc @ T=16 (re-run eval log re-read)",
+               pct1(sv["id16"]), "", ak_ours_label_run,
+               "akorn_tools/out/eval_100ep_T16.log (the full-stdout eval "
+               "the run record points to; unseeded re-run)"),
+        csvrow("akorn_sudoku", "ours",
+               "OOD board acc @ T=16 (re-run eval log re-read)",
+               pct1(sv["ood16"]), "", ak_ours_label_run,
+               "akorn_tools/out/eval_100ep_T16.log (the full-stdout eval "
+               "the run record points to; unseeded re-run)"),
+        csvrow("akorn_sudoku", "ours",
+               "ID board acc @ T_eval=128 (re-run eval log re-read)",
+               pct1(sv["id128"]), "", ak_ours_label_run,
+               "akorn_tools/out/eval_100ep_T128.log (the full-stdout eval "
+               "the run record points to; unseeded re-run)"),
+        csvrow("akorn_sudoku", "ours",
+               "OOD board acc @ T_eval=128 (re-run eval log re-read)",
+               pct1(sv["ood128"]), "", ak_ours_label_run,
+               "akorn_tools/out/eval_100ep_T128.log (the full-stdout eval "
+               "the run record points to; unseeded re-run)"),
+        csvrow("akorn_sudoku", "ours",
+               "ID board acc @ T=16 (earlier record revision)",
+               pct1(sv["pr_id16"]), "", ak_ours_label_run,
+               "akorn_tools/out/run_record.json (superseded earlier-"
+               "revision value quoted in the eval notes)"),
+        csvrow("akorn_sudoku", "ours",
+               "OOD board acc @ T=16 (earlier record revision)",
+               pct1(sv["pr_ood16"]), "", ak_ours_label_run,
+               "akorn_tools/out/run_record.json (superseded earlier-"
+               "revision value quoted in the eval notes)"),
+        csvrow("akorn_sudoku", "ours",
+               "OOD board acc @ T_eval=128 (earlier record revision)",
+               pct1(sv["pr_ood128"]), "", ak_ours_label_run,
+               "akorn_tools/out/run_record.json (superseded earlier-"
+               "revision value quoted in the eval notes)"),
+        csvrow("akorn_sudoku", "ours",
+               "ID board acc @ T_eval=128 (prediction-grid export re-check)",
+               pct1(sv["exp_id"]), "", ak_ours_label_run,
+               "akorn_tools/out/_export_id.log (board_acc of the exported "
+               "prediction grids, final EMA checkpoint)"),
+        csvrow("akorn_sudoku", "ours",
+               "OOD board acc @ T_eval=128 (prediction-grid export re-check)",
+               pct1(sv["exp_ood"]), "", ak_ours_label_run,
+               "akorn_tools/out/_export_ood.log (board_acc of the exported "
+               "prediction grids, final EMA checkpoint)"),
+        csvrow("akorn_sudoku", "ours", "surviving training log reaches epoch",
+               (str(sv["log_epoch"]) if sv["log_epoch"] is not None
+                else "not recorded"), "", ak_ours_label_run,
+               "akorn_tools/out/train_reduced.log"),
+        csvrow("akorn_sudoku", "ours",
+               "raw (non-EMA) board acc, end of surviving training log",
+               pct1(sv["log_raw"]), "", ak_ours_label_run,
+               "akorn_tools/out/train_reduced.log"),
+        csvrow("akorn_sudoku", "ours",
+               "EMA board acc, end of surviving training log",
+               pct1(sv["log_ema"]), "", ak_ours_label_run,
+               "akorn_tools/out/train_reduced.log"),
         csvrow("wonn_maze_hard", "published", "exact-board acc @ K=1, T=24",
                f"{PUB_WONN_BOARD[0]}", "", wn_pub_run,
                "WONN paper, Table 3, p. 9"),
@@ -518,7 +855,10 @@ def nl(s):
 # --------------------------------------------------------------------------
 
 def render(title, panels, foot, out_png):
-    fig_w, fig_h = 13.6, 9.0
+    # tall enough for both modes: the tracked record-based render and the
+    # no-baselines fallback, whose commit hashes read "n/a (...)" and so
+    # wrap one footnote line more
+    fig_w, fig_h = 13.6, 11.0
     c = Canvas(fig_w, fig_h)
     W, H = c.w, c.h
     cx0 = LEFT_PX
@@ -551,7 +891,7 @@ def render(title, panels, foot, out_png):
     leg2_y = leg_y + lh_pt(11) + 6
     c.rect(leg_x, leg2_y, sw_w, sw_h, BLUE)
     c.text(leg_x + sw_w + 10, leg2_y - 1,
-           "our reduced-budget run", size=11, color="#555555",
+           "our run (this repo)", size=11, color="#555555",
            band=(leg_x + sw_w + 10, W - RIGHT_PX + 2))
 
     strip_x = LEFT_PX - 18.0
@@ -625,6 +965,10 @@ def render(title, panels, foot, out_png):
         c.text(LEFT_PX, y, wrapped, size=10, color="#666666")
         y += nl(wrapped) * lh_pt(10) + 4
 
+    if y > c.h - 6.0:
+        raise AssertionError(
+            f"{F10}: content bottom {y:.0f}px exceeds the figure canvas "
+            f"height {c.h:.0f}px; enlarge fig_h or shorten the footnotes")
     c.check(F10)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     c.fig.savefig(out_png, dpi=DPI)
@@ -635,7 +979,8 @@ def records_from_csv(csv_path):
     """Fallback without a baselines directory: rebuild record-like dicts
     from the tracked data.csv so the figure can be regenerated from the
     tracked data alone. Fields that live only in the run records (commit
-    hashes, AKOrN export cross-check) come back as "not recorded"."""
+    hashes, the AKOrN paper-reference quote, export cross-check) come back
+    as "not recorded" / "not stated"."""
     if not csv_path.is_file():
         raise SystemExit(
             f"{csv_path} not found and no baselines directory given: pass "
@@ -643,11 +988,15 @@ def records_from_csv(csv_path):
     with csv_path.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
 
-    def val(block, metric):
+    def val_src(block, metric, source):
         for r in rows:
-            if (r["block"], r["source"], r["metric"]) == (block, "ours", metric):
+            if (r["block"], r["source"], r["metric"]) == (block, source,
+                                                         metric):
                 return r["value_percent"]
         return None
+
+    def val(block, metric):
+        return val_src(block, metric, "ours")
 
     def budget(block):
         for r in rows:
@@ -663,6 +1012,16 @@ def records_from_csv(csv_path):
         except ValueError:
             return None
 
+    def frac(s):
+        """tracked data.csv percent string -> record-style fraction.
+
+        The run records hold fractions (0.001) while data.csv holds
+        percents (0.1); build()'s pct1()/to_pct() auto-detection expects
+        fractions, so every percent read back here is divided by 100 --
+        otherwise sub-1.5 percents (board acc 0.1) would render x100."""
+        v = num(s)
+        return None if v is None else v / 100.0
+
     def epochs_min(block):
         m = re.match(r"(\d+)/(\d+) epochs, ([0-9.]+) min", budget(block))
         return int(m.group(1)), int(m.group(2)), float(m.group(3))
@@ -675,18 +1034,32 @@ def records_from_csv(csv_path):
 
     ak_epochs, ak_off, ak_min = epochs_min("akorn_sudoku")
     ak_gpu = hw()
+    seed_m = re.search(r"(\d+) run \(unseeded\)", budget("akorn_sudoku"))
     akorn = dict(
         gpu=f"NVIDIA GeForce {ak_gpu}",
         epochs_run=ak_epochs, official_epochs=ak_off,
         training_wall_minutes=ak_min,
         commit_hash="n/a (run record not given)",
+        # the tracked budget column records the run against the official
+        # epoch total, so the full-budget verdict stays reproducible here
+        official_command="official protocol (per tracked data.csv)",
+        seeds=dict(seeds_run=int(seed_m.group(1)) if seed_m else None),
         eval=dict(
-            board_accuracy=dict(
-                id_T16=num(val("akorn_sudoku", "ID board acc @ T=16")),
-                ood_T16=num(val("akorn_sudoku", "OOD board acc @ T=16")),
+            board_accuracy_T16=dict(
+                id_T16=frac(val("akorn_sudoku", "ID board acc @ T=16")),
+                ood_T16=frac(val("akorn_sudoku", "OOD board acc @ T=16")),
             ),
-            raw_model_id_T16_from_train_log=num(
+            board_accuracy_T_eval_128=dict(
+                id_T128=frac(val("akorn_sudoku",
+                               "ID board acc @ T_eval=128")),
+                ood_T128=frac(val("akorn_sudoku",
+                                "OOD board acc @ T_eval=128")),
+            ),
+            raw_model_id_T16_from_train_log_epoch_100=num(
                 val("akorn_sudoku", "raw (non-EMA) ID board acc @ T=16")),
+            official_paper_reference=dict(
+                id=val_src("akorn_sudoku", "ID board acc @ T_eval=128",
+                           "published") or ""),
             export_cross_check=dict(id_T16=None, ood_T16=None),
         ),
     )
@@ -707,30 +1080,67 @@ def records_from_csv(csv_path):
         commit_hash="n/a (run record not given)",
         eval=dict(
             ema_model=dict(
-                board_acc=num(val("wonn_maze_hard",
+                board_acc=frac(val("wonn_maze_hard",
                                   "exact-board acc @ K=1, T=24")),
-                path_f1=num(val("wonn_maze_hard", "path F1 @ K=1, T=24")),
+                path_f1=frac(val("wonn_maze_hard", "path F1 @ K=1, T=24")),
             ),
             **{"model.pth": dict(
-                board_acc=num(val(
+                board_acc=frac(val(
                     "wonn_maze_hard",
                     "exact-board acc @ K=1, T=24 (non-EMA model.pth)")),
-                path_f1=num(val(
+                path_f1=frac(val(
                     "wonn_maze_hard",
                     "path F1 @ K=1, T=24 (non-EMA model.pth)")),
             )},
         ),
     )
 
-    t128_val = num(val("akorn_sudoku", "OOD board acc @ T_eval=128"))
-    t128 = (t128_val, "data.csv") if t128_val is not None else (None, None)
-
     params_raw = None
     p = val("wonn_maze_hard", "params raw")
     if p and re.fullmatch(r"[0-9,]+", p):
         params_raw = int(p.replace(",", ""))
 
-    return akorn, wonn, t128, params_raw
+    # surviving-log and re-eval numbers fall back to their own data.csv
+    # rows (written there on the last record-based run), so the footnotes
+    # regenerate; export-grid counts exist only next to the run itself
+    sv = dict(
+        id16=frac(val("akorn_sudoku",
+                     "ID board acc @ T=16 (re-run eval log re-read)")),
+        ood16=frac(val("akorn_sudoku",
+                      "OOD board acc @ T=16 (re-run eval log re-read)")),
+        id128=frac(val("akorn_sudoku",
+                      "ID board acc @ T_eval=128 (re-run eval log re-read)")),
+        ood128=frac(val(
+            "akorn_sudoku",
+            "OOD board acc @ T_eval=128 (re-run eval log re-read)")),
+        exp_id=frac(val(
+            "akorn_sudoku",
+            "ID board acc @ T_eval=128 (prediction-grid export re-check)")),
+        exp_ood=frac(val(
+            "akorn_sudoku",
+            "OOD board acc @ T_eval=128 (prediction-grid export re-check)")),
+        log_epoch=None, log_raw=None, log_ema=None,
+        pr_id16=frac(val("akorn_sudoku",
+                        "ID board acc @ T=16 (earlier record revision)")),
+        pr_ood16=frac(val("akorn_sudoku",
+                         "OOD board acc @ T=16 (earlier record revision)")),
+        pr_ood128=frac(
+            val("akorn_sudoku",
+                "OOD board acc @ T_eval=128 (earlier record revision)")),
+    )
+    ep = val("akorn_sudoku", "surviving training log reaches epoch")
+    if ep is not None:
+        try:
+            sv["log_epoch"] = int(ep)
+        except ValueError:
+            pass
+    sv["log_raw"] = frac(val(
+        "akorn_sudoku", "raw (non-EMA) board acc, end of surviving "
+        "training log"))
+    sv["log_ema"] = frac(val(
+        "akorn_sudoku", "EMA board acc, end of surviving training log"))
+
+    return akorn, wonn, params_raw, sv
 
 
 def main(argv=None):
@@ -761,24 +1171,36 @@ def main(argv=None):
         ARGS.wonn_train_log = wonn_record.parent / "train_log.txt"
         akorn = json.loads(akorn_record.read_text())
         wonn = json.loads(wonn_record.read_text())
-        t128 = find_akorn_t128(akorn)
-        if t128[0] is not None:
-            print(f"AKOrN T_eval=128 result found in record at {t128[1]}: "
-                  f"{t128[0]:.1f}%")
-        else:
-            print("AKOrN T_eval=128: not present in record -> 'not run'")
+        surviving = akorn_surviving_logs(baselines_dir)
+        surviving.update(akorn_prior_revision(akorn))
     else:
         print("--baselines-dir not given and CF_BASELINES_DIR not set: "
               "regenerating from the tracked "
               "figures/baselines_reference/data.csv only; record-only "
-              "fields (commit hashes, export cross-check) read "
-              "'not recorded'.")
+              "fields (commit hashes, paper-reference quote, export "
+              "cross-check) read 'not recorded' / 'not stated'.")
         ARGS.wonn_train_log = None
-        akorn, wonn, t128, params_from_csv = records_from_csv(
+        akorn, wonn, params_from_csv, surviving = records_from_csv(
             out_dir / "data.csv")
 
+    t128 = (akorn_t128_id(akorn), akorn_t128_ood(akorn))
+    if t128[1] is not None:
+        print(f"AKOrN T_eval=128 from record: ID "
+              f"{'' if t128[0] is None else format(t128[0], '.1f')}, "
+              f"OOD {t128[1]:.1f}")
+    else:
+        print("AKOrN T_eval=128 OOD: not present in record -> 'not run'")
+    rc = [f"{k}={surviving[k]}" for k in ("id16", "ood16", "id128",
+                                          "ood128", "exp_id", "exp_ood",
+                                          "pr_id16", "pr_ood16",
+                                          "pr_ood128")
+          if surviving[k] is not None]
+    print("AKOrN surviving re-eval/export/prior-revision logs: "
+          + ("; ".join(rc) if rc else "not present -> 'not run'"))
+
     title, panels, foot, csv_rows = build(akorn, wonn, t128,
-                                          params_raw=params_from_csv)
+                                          params_raw=params_from_csv,
+                                          surviving=surviving)
 
     render(title, panels, foot, out_dir / "baselines_reference.png")
 

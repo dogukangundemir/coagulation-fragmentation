@@ -164,6 +164,83 @@ families, not absolute values.
 
 ---
 
+## Settling at 160 epochs: settling measures vs unrolling depth
+
+Packet figure: F4
+
+![Settling at 160 epochs: settling measures vs unrolling step](settling_160ep.png)
+
+**Caption.** Per-step settling measures of the trained 160-epoch
+checkpoints on the first 64 test mazes, unrolled for 32 steps (log scale), 3 seeds
+each (0, 1, 2): CF-Full hid=16, CF-NoFrag hid=18 and CF-WallAware hid=16 (all trained
+160 epochs at T_train=8; the measure is the residual coagulation-fragmentation flux at
+step t), versus RecurrentCNN hid=22 trained 160 epochs at fixed T=8 and RecurrentCNN
+hid=22 trained 160 epochs with the horizon drawn per batch as T ~ U{4..16} (the
+measure is the relative state change ||h_t - h_{t-1}|| / ||h_{t-1}||). The 40-epoch
+settling figure above (settling.png) remains untouched for comparison; the two plotted
+measures are different quantities, so the figure compares trends (decay vs no decay),
+not absolute values across families.
+
+**How to read.** X-axis: unrolling step t (1-32). Y-axis: settling measure, log
+scale. Thick lines are the geometric mean over the 3 seeds per step (the appropriate
+aggregate on a log axis), thin semi-transparent lines the individual seeds,
+colour-coded per family: CF-Full blue, CF-NoFrag vermillion, CF-WallAware orange
+(solid lines); RecurrentCNN dashed - reddish purple for the fixed-T=8 variant,
+bluish green for the variable-T variant. Legend labels name the quantity each curve
+plots (residual flux / relative state change); every model's budget (160 epochs) and
+training horizon are in the legend or the figure footnote. There is no sd band and
+nothing is clipped: the axis floor (10^-5, the decade containing the
+smallest plotted value, 8.2e-5) is a plain axis limit, not a clip of the data.
+
+**Key takeaway.** Depth of settling separates the models into three groups
+(all values are 3-seed geometric means at step 32, from data.csv "F4 settling
+160 ep"). CF-NoFrag hid=18 settles deepest, from 0.184 at step 1 to 0.000405
+(454x decay); CF-Full follows at 0.230 -> 0.00655 (35x), with the geometric mean
+pulled up by seed 2, whose flux re-bounces (0.0770 at step 32, versus 0.000735
+and 0.00497 for seeds 0 and 1). CF-WallAware stalls: 0.199 -> 0.0430 (4.6x),
+plateauing at 0.040-0.047 in all three seeds. The two RecurrentCNN variants
+diverge exactly along their training horizon: the fixed-T=8 one keeps churning
+(1.23 -> 0.855, order-one throughout), while the variable-T one partially
+settles (1.59 -> 0.0135, 118x) - but still ends 33x above CF-NoFrag's step-32
+level. Versus the 40-epoch checkpoints, longer training does not deepen settling
+for the plain CF models (CF-Full 40-ep step-32 geometric mean 0.000813 vs
+0.00655 at 160 ep; CF-NoFrag 0.000233 vs 0.000405 - same ballpark, different hid),
+and the orders-of-magnitude CF-vs-fixed-T-RCNN contrast (0.00655 / 0.000405 vs
+0.855) is unchanged.
+
+**Data source.** Recomputed by `scripts/figures/settling_160.py` (repo root or
+`--root`) from the checkpoint files of the 160-epoch follow-up runs -
+`week2_results/followups/E1_CF-Full_seed{0,1,2}.pt` and
+`week2_results/followups/E4_CF-NoFrag160_seed{0,1,2}.pt`,
+`week2_results/wallaware160/E5_CF-WallAware160_seed{0,1,2}.pt`,
+`week2_results/rcnn160/E6_RecurrentCNN160_seed{0,1,2}.pt` and
+`week2_results/rcnn160/E7_RecurrentCNN160-Tsamp_seed{0,1,2}.pt` (run archive
+outside git; pass `--checkpoints-root` or `$CF_RESULTS_ROOT` for another
+location) - using `cf/train.py:settling_curve` on the split's first 64 test
+mazes (the same seeded split and function as the 40-epoch figure). Each run's
+`status: done` and `epochs_done: 160` are asserted against its run directory's
+`results.json` before its numbers are plotted. Aggregated in `data.csv` under
+"F4 settling 160 ep": the mean column holds the geometric mean over the 3 seeds
+at that step, the sd column is empty (no sd is shown), and the seed0-2 columns
+hold the per-seed values.
+
+**Caveats.** n = 3 seeds and only 64 test mazes enter the average, so the
+point-by-point spread is fully shown as per-seed lines, not summarized. The
+two measures are dimensionally different (a chemical flux vs a relative state
+change): only the shape (decay vs no decay) is comparable across families. The
+CF-Full seed-2 re-bounce (0.0770 at step 32) pulls that family's geometric mean
+above two of its own seeds - the same phenomenon the 40-epoch figure documented
+for its seed-1 curve; with 3 seeds it is not decidable whether such a re-bounce
+is typical. CF-WallAware's stall at 0.043 is consistent across all three seeds
+(0.040, 0.042, 0.047), so it is a property of the wall-aware gating rather
+than a seed accident - but again n = 3. The variable-T RecurrentCNN's partial
+settling is a 160-epoch observation; the 40-epoch settling figure contains no
+variable-T RecurrentCNN curve, so no 40-vs-160 comparison exists for it. The
+CF-NoFrag curves differ in hidden width across the two budgets (hid=16 at
+40 ep, the capacity-matched hid=18 at 160 ep).
+
+---
+
 ## Reproducing
 
 ```bash
@@ -175,3 +252,15 @@ main repository's results archive (under the repository root, or pass `--root`),
 and rewrites `budget_vs_fragmentation.png`, `depth_extrapolation.png`, `settling.png` and
 `data.csv` in this folder. The Okabe-Ito colourblind-safe palette and rcParams live in
 `scripts/figures/style.py`, shared by all figure scripts.
+
+```bash
+python scripts/figures/settling_160.py
+```
+
+Recomputes the 160-epoch settling curves from the checkpoint files of the follow-up
+runs (under the repository root, or pass `--checkpoints-root` / set
+`CF_RESULTS_ROOT`), CPU only unless `CF_ALLOW_LOCAL_GPU=1`, rewrites
+`settling_160ep.png` and merges its rows (fig tag "F4 settling 160 ep") into
+`data.csv`, preserving the rows written by `curriculum_figures.py`. Note that
+`curriculum_figures.py` rewrites `data.csv` from scratch (its own figures' rows
+only): run `settling_160.py` after it to get all four figure groups into the CSV.

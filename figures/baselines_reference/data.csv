@@ -2,14 +2,28 @@ block,source,metric,value_percent,sd_percent,budget,hardware,data_source
 akorn_sudoku,published,ID board acc @ T=16,99.8,0.1,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
 akorn_sudoku,published,OOD board acc @ T=16,16.6,,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
 akorn_sudoku,published,OOD board acc @ T_eval=128,51.7,3.3,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
-akorn_sudoku,ours,ID board acc @ T=16,99.3,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
-akorn_sudoku,ours,OOD board acc @ T=16,12.7,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
-akorn_sudoku,ours,OOD board acc @ T_eval=128,38.6,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
-akorn_sudoku,ours,raw (non-EMA) ID board acc @ T=16,94.8,,"40/100 epochs, 17.9 min, 1 run (seed not recorded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (training log value)
+akorn_sudoku,published,ID board acc @ T_eval=128,100.0,,100 (official protocol) epochs; not trained by us,not stated in cited table,akorn_tools/out/run_record.json (paper reference quoted there)
+akorn_sudoku,ours,ID board acc @ T=16,99.8,,"100/100 epochs, 41.5 min, 1 run (unseeded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,OOD board acc @ T=16,19.7,,"100/100 epochs, 41.5 min, 1 run (unseeded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,OOD board acc @ T_eval=128,51.6,,"100/100 epochs, 41.5 min, 1 run (unseeded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,ID board acc @ T_eval=128,100.0,,"100/100 epochs, 41.5 min, 1 run (unseeded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,raw (non-EMA) ID board acc @ T=16,98.8,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (survives only in the run record; the preserved training log does not reach the final epoch)
+akorn_sudoku,ours,ID board acc @ T=16 (re-run eval log re-read),99.8,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/eval_100ep_T16.log (the full-stdout eval the run record points to; unseeded re-run)
+akorn_sudoku,ours,OOD board acc @ T=16 (re-run eval log re-read),19.7,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/eval_100ep_T16.log (the full-stdout eval the run record points to; unseeded re-run)
+akorn_sudoku,ours,ID board acc @ T_eval=128 (re-run eval log re-read),100.0,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/eval_100ep_T128.log (the full-stdout eval the run record points to; unseeded re-run)
+akorn_sudoku,ours,OOD board acc @ T_eval=128 (re-run eval log re-read),51.6,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/eval_100ep_T128.log (the full-stdout eval the run record points to; unseeded re-run)
+akorn_sudoku,ours,ID board acc @ T=16 (earlier record revision),99.9,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (superseded earlier-revision value quoted in the eval notes)
+akorn_sudoku,ours,OOD board acc @ T=16 (earlier record revision),19.4,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (superseded earlier-revision value quoted in the eval notes)
+akorn_sudoku,ours,OOD board acc @ T_eval=128 (earlier record revision),51.7,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (superseded earlier-revision value quoted in the eval notes)
+akorn_sudoku,ours,ID board acc @ T_eval=128 (prediction-grid export re-check),100.0,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo","akorn_tools/out/_export_id.log (board_acc of the exported prediction grids, final EMA checkpoint)"
+akorn_sudoku,ours,OOD board acc @ T_eval=128 (prediction-grid export re-check),51.6,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo","akorn_tools/out/_export_ood.log (board_acc of the exported prediction grids, final EMA checkpoint)"
+akorn_sudoku,ours,surviving training log reaches epoch,40,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/train_reduced.log
+akorn_sudoku,ours,"raw (non-EMA) board acc, end of surviving training log",94.8,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/train_reduced.log
+akorn_sudoku,ours,"EMA board acc, end of surviving training log",99.1,,"100/100 epochs, 41.5 min, 1 run (unseeded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/train_reduced.log
 wonn_maze_hard,published,"exact-board acc @ K=1, T=24",76.2,,9000 (official protocol) epochs; not trained by us,not stated in cited table,"WONN paper, Table 3, p. 9"
 wonn_maze_hard,published,params,"0.396 M (raw, paper)",,9000 (official protocol) epochs; not trained by us,not stated in cited table,"WONN paper, Table 3, p. 9"
-wonn_maze_hard,ours,"exact-board acc @ K=1, T=24",0.0,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
-wonn_maze_hard,ours,"path F1 @ K=1, T=24",47.7,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
-wonn_maze_hard,ours,"exact-board acc @ K=1, T=24 (non-EMA model.pth)",0.0,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
-wonn_maze_hard,ours,"path F1 @ K=1, T=24 (non-EMA model.pth)",75.1,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
-wonn_maze_hard,ours,params raw,"396,293",,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/train_log.txt; effective not measured
+wonn_maze_hard,ours,"exact-board acc @ K=1, T=24",0.1,,"150/9000 epochs, 33.1 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"path F1 @ K=1, T=24",84.0,,"150/9000 epochs, 33.1 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"exact-board acc @ K=1, T=24 (non-EMA model.pth)",8.4,,"150/9000 epochs, 33.1 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"path F1 @ K=1, T=24 (non-EMA model.pth)",93.2,,"150/9000 epochs, 33.1 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,params raw,"396,293",,"150/9000 epochs, 33.1 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/train_log.txt; effective not measured
