@@ -147,8 +147,13 @@ edges; level 9 (19×19) has 161 free cells and 160 free edges.
 answer; the material dynamics only sharpens it (all flow is on the path after
 the very first relaxation). Where the coagulation/fragmentation dynamics is
 irreplaceable is mazes with loops: flow splits over parallel routes, and the
-adaptation concentrates it on the shortest one, which is the proven Physarum
-convergence result.
+adaptation concentrates it on the shortest one. Concentration has a proven
+counterpart, but for a different rule: the Bonifaci/Mehlhorn/Varma Physarum
+theorem covers the update dD_e/dt = |Q_e| − D_e, in which tube material is
+created and destroyed. The rule implemented here (update step 3) is the
+mass-conserving normalised redistribution D_e ← M_tube · D_e f_e / Σ(D f),
+inspired by that model, and no convergence proof of that kind is claimed
+for it.
 
 ## How information moves
 
@@ -540,9 +545,9 @@ the validation-selected horizon T* ("at T = 8 / at T*"):
 | relaxation per outer step | level 5 test | probe 7 | probe 9 |
 | --- | --- | --- | --- |
 | exact solve | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 |
-| Jacobi, 1 sweep | not run | not run | not run |
-| Jacobi, 4 sweeps | not run | not run | not run |
-| Jacobi, 16 sweeps | not run | not run | not run |
+| Gauss-Seidel (two-colour), 1 sweep | not run | not run | not run |
+| Gauss-Seidel (two-colour), 4 sweeps | not run | not run | not run |
+| Gauss-Seidel (two-colour), 16 sweeps | not run | not run | not run |
 
 Reading. As pre-registered under X1/X2, on the perfect-maze curriculum
 this arm sits at ceiling by construction: the mazes are trees, so with the
@@ -556,7 +561,8 @@ unique conserved solution at every outer step (no horizon dependence), so
 the entry at T* is 1.000 whichever horizon the selection rule picks. The horizon sweep is
 therefore a sanity and ceiling check, not a test; the informative regime
 is the finite-sweep one (accuracy vs local relaxation budget — the
-information speed per grid 5/7/9), and no Jacobi(k) or other finite-sweep
+information speed per grid 5/7/9), and no k-sweep Gauss-Seidel
+(two-colour) or other finite-sweep
 run exists in results.json, so those cells are marked not run (absent
 measurement, not a measured zero). Run totals per 1000-maze set:
 11.2 s at level 5, 40.6 s at level 7, 176.9 s at level 9 (one exact solve

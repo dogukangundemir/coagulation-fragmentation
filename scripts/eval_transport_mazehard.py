@@ -1,4 +1,5 @@
-"""Physics-only Family D on the Maze-hard test set: exact solve vs Jacobi budgets.
+"""Physics-only Family D on the Maze-hard test set: exact solve vs
+Gauss-Seidel (two-colour) sweep budgets.
 
 Plain language: the maze is treated as a network of pipes - every pair of
 adjacent free cells is a pipe, a wall is a missing pipe. At every time step
@@ -16,9 +17,9 @@ the same Hugging Face dataset every maze-hard number in this repository
 uses, cf/data/maze_hard.py):
 
 - the exact whole-maze solve per outer step (float64) and fixed budgets of
-  Jacobi sweeps per outer step (k in 1, 4, 16, 64): each sweep updates every
-  cell from its own neighbours only, so information travels one cell per
-  sweep - the quantity that separates "the physics contains the answer"
+  Gauss-Seidel (two-colour) sweeps per outer step (k in 1, 4, 16, 64): each
+  sweep updates every cell from its own neighbours only, so information
+  travels one cell per sweep - the quantity that separates "the physics contains the answer"
   from "a local process finds it in bounded time";
 - how many mazes have MORE THAN ONE shortest start-to-goal path (BFS count,
   analysis only), and the accuracy separately on tied and untied mazes.
@@ -209,7 +210,8 @@ def evaluate_config(model, d, tied, Ts, batch_size=EVAL_BATCH):
     or non-finite, or flow conservation beyond the 1e-5 tolerance) is held at
     its last conservation-valid flow. On Maze-hard grids (which have loops)
     such a held flow is NOT guaranteed to equal the later exact flow - the
-    counts are reported per horizon. Sweep (Jacobi) mode has no exact solve
+    counts are reported per horizon. Sweep (Gauss-Seidel, two-colour) mode has
+    no exact solve
     to break: every maze is stepped at every horizon and only finiteness is
     checked.
 
