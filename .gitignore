@@ -6,6 +6,7 @@ CF_Looped_Reasoning/
 *.pt
 reo1/
 week1_results/
+week2_results/
 presentation_figs/
 .venv/
 /data/
