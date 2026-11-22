@@ -365,6 +365,78 @@ def test_free_energy_non_increasing_under_fixed_rates_small_step():
     assert Vs[-1] < Vs[0]
 
 
+def test_free_energy_finite_for_empty_rungs_where_chained_q_overflows():
+    # Regression (results/ladder_train3): free_energy materialized
+    # Q = rung_weights(rates) in float32 -- the chained product
+    # Q_{k+1} = Q_k a_k / b_{k+1} -- and took log of it. Each ratio here is
+    # float32-finite (a/b ~ exp(50)), but the chain Q_3 = exp(100)
+    # overflows to inf, so log Q was +inf and the old V came out NaN at
+    # the very first micro steps of every recorded trace (t = 1: the
+    # upper rungs are still empty, c_k = 0, and c_k * (finite - inf) is
+    # 0 * inf = NaN) and -inf once mass climbs the offending rungs
+    # (seed 2, outer steps 10-31). free_energy accumulates log Q in log
+    # space instead and must stay finite in BOTH cases; with every
+    # increment inside the [-2*g_max, 2*g_max] clamp the float32 value
+    # must also match the rate-recursion float64 reference, i.e. the fix
+    # changes nothing where the old formula was well-defined.
+    torch.manual_seed(0)
+    model = LadderCFNet()
+    K, g_max = model.K, model.g_max
+    B, hid, H, W = 2, 4, 5, 5
+    mu = torch.full((B, hid, K - 1, H, W), 0.5)
+    # per-rung a/b ratios of e^50 (well inside the clamp); the CHAIN
+    # reaches e^100..e^150, far outside the float32 exp range.
+    b = mu * torch.exp(torch.full((B, hid, K - 1, H, W), -50.0))
+    rates = (mu, b)
+    assert torch.isinf(model.rung_weights(rates)).any(), \
+        "test sensitivity: chained Q stays finite, so this probe misses the bug"
+    # float64 reference from the rate recursion (same increments, double)
+    inc64 = (mu.double().log() - b.double().log())
+    logQ64 = torch.zeros(B, hid, K, H, W, dtype=torch.float64)
+    for i in range(K - 1):
+        logQ64[:, :, i + 1] = logQ64[:, :, i] + inc64[:, :, i]
+    c0 = torch.zeros(B, hid, K, H, W)
+    c0[:, :, 0] = 1.0                    # all-monomer start: c_k = 0 entries
+    c1 = torch.rand(B, hid, K, H, W)      # mass on every rung: was -inf
+    for cc in (c0, c1):
+        V = float(model.free_energy(cc, rates))
+        assert np.isfinite(V), "V not finite (regression: NaN/-inf)"
+        ref = (cc.double() * (torch.log(cc.double().clamp(min=1e-300))
+                              - logQ64) - cc.double()).sum().item()
+        assert abs(V - ref) < 1e-4 * max(1.0, abs(ref)), \
+            f"fixed V {V} disagrees with the float64 reference {ref}"
+
+
+def test_free_energy_finite_for_zero_and_extreme_rates():
+    # The other branches of the same bug: an underflowed rate head makes
+    # a or b exactly 0 (the trained seeds 0/1 have b = 0 cells), so the
+    # chained division was inf, 0/0 = NaN, and log Q = -inf; and rates at
+    # the float32 ceiling make |log(a/b)| leave the 2*g_max envelope, so
+    # the increment clamp is what keeps log Q (hence V) finite. The
+    # all-monomer start and the fully empty (all-wall) state are both
+    # covered: the empty state has V = 0 exactly.
+    torch.manual_seed(0)
+    model = LadderCFNet()
+    K = model.K
+    B, hid, H, W = 2, 4, 5, 5
+    c_empty = torch.zeros(B, hid, K, H, W)          # all-wall grid state
+    c_start = torch.zeros(B, hid, K, H, W)
+    c_start[:, :, 0] = 1.0                          # all-monomer start
+    assert float(model.free_energy(c_empty,
+                                  (torch.zeros(B, hid, K - 1, H, W),
+                                   torch.zeros(B, hid, K - 1, H, W)))) == 0.0
+    for a_val, b_val in [(0.0, 0.0),        # 0/0 = NaN in the old recursion
+                         (100.0, 0.0),      # a/0 = inf, log b = -inf
+                         (1e-38, 0.0),      # subnormal a, zero b
+                         (1e38, 1e-6)]:     # |log(a/b)| ~ 101 > 2*g_max
+        a = torch.full((B, hid, K - 1, H, W), a_val)
+        b = torch.full((B, hid, K - 1, H, W), b_val)
+        for cc in (c_start, torch.rand(B, hid, K, H, W)):
+            V = float(model.free_energy(cc, (a, b)))
+            assert np.isfinite(V), \
+                f"V not finite for a={a_val:g}, b={b_val:g} (regression)"
+
+
 def _frozen_rate_run(model, x, outer):
     """Initial state, one rate refresh, then `outer` outer steps of frozen-rate
     fast phases; returns V0, per-micro-step V list (V0 first) and the
