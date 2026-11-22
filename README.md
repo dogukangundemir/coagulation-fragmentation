@@ -44,6 +44,11 @@ Notebook: open `CF_Looped_Reasoning_Milestone_1.ipynb` in
 recommended), then `Run all` (~5-10 min). Figures and checkpoints are written
 to Google Drive under `CF_Looped_Reasoning/`.
 
+## Reproducibility
+
+Checkpoint resume is bit-identical on CPU and equal up to cuDNN float noise
+on GPU.
+
 ## Roadmap
 
 - **Milestone 2:** full 4-model benchmark (CF-Full / CF-NoFrag / CF-NoBound /

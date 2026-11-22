@@ -134,11 +134,28 @@ def test_mid_epoch_budget_resume_matches_uninterrupted_run(tmp_path, monkeypatch
                                   _clock=_FakeClock(), **args)
     assert not hist_b["stopped_early"]
     assert hist_b["epochs_done"] == 2
+    # On CPU the resume must be bit-identical to the uninterrupted run.
+    # On CUDA it cannot be: cuDNN's convolution/backward kernels are not
+    # run-to-run deterministic (the same op re-run with the same inputs can
+    # differ by ~5e-8 float noise), so a resumed epoch accumulates slightly
+    # different updates than an uninterrupted one. Enabling
+    # torch.use_deterministic_algorithms would fix this but slows real
+    # training, so on GPU we compare with a small relative/absolute
+    # tolerance instead.
+    on_cuda = DEVICE.type == "cuda"
     for key in ("train_loss", "val_strict", "val_iou", "val_covers_path"):
-        assert [round(v, 12) for v in hist_b[key]] == [round(v, 12) for v in ref_hist[key]]
-    dw = max((ref_model.state_dict()[k] - model_b.state_dict()[k]).abs().max().item()
-             for k in ref_model.state_dict())
-    assert dw < 1e-6
+        if on_cuda:
+            assert hist_b[key] == pytest.approx(ref_hist[key], rel=1e-6, abs=1e-7)
+        else:
+            assert [round(v, 12) for v in hist_b[key]] == [round(v, 12) for v in ref_hist[key]]
+    if on_cuda:
+        assert all(torch.allclose(ref_model.state_dict()[k], model_b.state_dict()[k],
+                                  rtol=1e-6, atol=1e-7)
+                   for k in ref_model.state_dict())
+    else:
+        dw = max((ref_model.state_dict()[k] - model_b.state_dict()[k]).abs().max().item()
+                 for k in ref_model.state_dict())
+        assert dw < 1e-6
 
 
 @pytest.mark.parametrize("make_model", [lambda: CFNet(hid=4), lambda: RecurrentCNN(hid=8)])
