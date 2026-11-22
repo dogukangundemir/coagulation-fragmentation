@@ -203,7 +203,8 @@ def execute_run(model_name, seed, tag, data, cfg, out_dir, max_minutes, verbose=
         train_ds=data["train"], val_ds=data["val"],
         pos_weight=train_pos_weight(data["train"]),
         results_dir=out_dir, verbose=verbose,
-        checkpoint_path=out_dir / ("%s.ckpt.pt" % tag), max_minutes=max_minutes)
+        checkpoint_path=out_dir / ("%s.ckpt.pt" % tag), run_id=tag,
+        max_minutes=max_minutes)
     test_summary, _, _ = train_mod.evaluate_model(model, data["test"], cfg["T_train"])
     sweeps = {"test": train_mod.sweep_model(model, data["test"], cfg["sweep_T"]),
               "probe7": train_mod.sweep_model(model, data["probe7"], cfg["sweep_T"]),

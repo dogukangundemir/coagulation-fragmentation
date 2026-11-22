@@ -8,6 +8,7 @@ to 0 per step, grad-norm clip 1.0, batch 32, 40 epochs, BCEWithLogits with
 pos_weight = neg/pos of the train labels.
 """
 import time
+import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -56,9 +57,37 @@ def evaluate_model(model, d, T, thresh=None, assert_strict_equals_exact=True):
     return summarize(rows), rows, probs
 
 
+def _run_fingerprint(model, hp, T, seed, pos_weight):
+    """Identity of a training run: model class, parameter names+shapes,
+    hyperparameters, and the run-level arguments (T, seed, effective pos_weight)."""
+    return {
+        "model_class": type(model).__name__,
+        "param_shapes": sorted((n, tuple(p.shape)) for n, p in model.named_parameters()),
+        "hyperparams": dict(hp),
+        "T": T,
+        "seed": seed,
+        "pos_weight": float(pos_weight),
+    }
+
+
+def _fingerprint_mismatch(old, new):
+    """Field-level description of how two run fingerprints differ (for error messages)."""
+    diff = [k for k in sorted(set(old) | set(new)) if old.get(k) != new.get(k)]
+    parts = []
+    if "hyperparams" in diff:
+        oh, nh = old.get("hyperparams") or {}, new.get("hyperparams") or {}
+        hp_keys = [k for k in sorted(set(oh) | set(nh)) if oh.get(k) != nh.get(k)]
+        if hp_keys:
+            parts.append("hyperparams: " + ", ".join(hp_keys))
+        diff.remove("hyperparams")
+    parts.extend(diff)
+    return "; ".join(parts) if parts else "unknown"
+
+
 def train_model(make_model, T, seed, tag, train_ds, val_ds, pos_weight=None,
                 results_dir=None, verbose=True, assert_strict_equals_exact=True,
-                max_minutes=None, checkpoint_path=None, _clock=None):
+                max_minutes=None, checkpoint_path=None, run_id: str | None = None,
+                _clock=None):
     # budget checks use an injectable monotonic clock (tests pass a fake one);
     # time.time() is kept only for the human-facing train_time_s
     clock = time.monotonic if _clock is None else _clock
@@ -82,12 +111,36 @@ def train_model(make_model, T, seed, tag, train_ds, val_ds, pos_weight=None,
     hist = {k: [] for k in ["train_loss", "val_strict", "val_iou", "val_covers_path"]}
     best_key, best_state = (-1.0, -1.0), None
     start_ep = 0
+    fingerprint = _run_fingerprint(model, hp, T, seed, pos_weight)
     if checkpoint_path is not None and Path(checkpoint_path).exists():
+        # one load serves both the resume guard and the state restore below
+        ck = torch.load(str(checkpoint_path), map_location="cpu")
+        if "run_id" in ck or "fingerprint" in ck:
+            if ck.get("run_id") != run_id:
+                raise ValueError(
+                    "refusing to resume checkpoint %s: it was written by run_id=%r but "
+                    "this run has run_id=%r; delete the checkpoint (or give it a "
+                    "run_id-unique path) if this is a new run"
+                    % (checkpoint_path, ck.get("run_id"), run_id))
+            if ck.get("fingerprint") != fingerprint:
+                raise ValueError(
+                    "refusing to resume checkpoint %s: run fingerprint mismatch "
+                    "(%s); the checkpoint belongs to a different training "
+                    "configuration" % (checkpoint_path, _fingerprint_mismatch(ck.get("fingerprint") or {}, fingerprint)))
+        else:
+            if run_id is not None:
+                raise ValueError(
+                    "refusing to resume checkpoint %s: it predates run_id/fingerprint "
+                    "tagging and its identity cannot be verified against run_id=%r; "
+                    "delete the checkpoint to start fresh"
+                    % (checkpoint_path, run_id))
+            warnings.warn("resuming %s from a checkpoint without run_id/fingerprint "
+                          "tags; it is assumed to belong to this run" % checkpoint_path)
         # resume: restore the exact training trajectory (weights, optimizer,
         # per-step scheduler state, history and model-selection state) plus
         # the DataLoader generator, so resumed epochs draw the same shuffled
-        # batch order as an uninterrupted run would
-        ck = torch.load(str(checkpoint_path), map_location=DEVICE)
+        # batch order as an uninterrupted run would (load_state_dict copies
+        # the CPU tensors into the module's / optimizer's DEVICE state)
         model.load_state_dict(ck["model_state"])
         opt.load_state_dict(ck["opt_state"])
         sched.load_state_dict(ck["sched_state"])
@@ -101,7 +154,8 @@ def train_model(make_model, T, seed, tag, train_ds, val_ds, pos_weight=None,
         torch.save(dict(model_state=model.state_dict(), opt_state=opt.state_dict(),
                         sched_state=sched.state_dict(),
                         gen_state=gen.get_state(), epoch=ep, hist=hist,
-                        best_key=best_key, best_state=best_state),
+                        best_key=best_key, best_state=best_state,
+                        run_id=run_id, fingerprint=fingerprint),
                    str(checkpoint_path))
 
     stop = False
