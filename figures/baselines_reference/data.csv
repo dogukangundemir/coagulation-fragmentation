@@ -1,0 +1,15 @@
+block,source,metric,value_percent,sd_percent,budget,hardware,data_source
+akorn_sudoku,published,ID board acc @ T=16,99.8,0.1,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
+akorn_sudoku,published,OOD board acc @ T=16,16.6,,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
+akorn_sudoku,published,OOD board acc @ T_eval=128,51.7,3.3,100 (official protocol) epochs; not trained by us,not stated in cited table,"AKOrN paper, Table 19, p. 36"
+akorn_sudoku,ours,ID board acc @ T=16,99.3,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,OOD board acc @ T=16,12.7,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,OOD board acc @ T_eval=128,38.6,,"40/100 epochs, 17.9 min, 1 run (seed not recorded), preliminary","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json
+akorn_sudoku,ours,raw (non-EMA) ID board acc @ T=16,94.8,,"40/100 epochs, 17.9 min, 1 run (seed not recorded)","RTX 3070 Ti (8 GB), this repo",akorn_tools/out/run_record.json (training log value)
+wonn_maze_hard,published,"exact-board acc @ K=1, T=24",76.2,,9000 (official protocol) epochs; not trained by us,not stated in cited table,"WONN paper, Table 3, p. 9"
+wonn_maze_hard,published,params,"0.396 M (raw, paper)",,9000 (official protocol) epochs; not trained by us,not stated in cited table,"WONN paper, Table 3, p. 9"
+wonn_maze_hard,ours,"exact-board acc @ K=1, T=24",0.0,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"path F1 @ K=1, T=24",47.7,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64), preliminary","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"exact-board acc @ K=1, T=24 (non-EMA model.pth)",0.0,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,"path F1 @ K=1, T=24 (non-EMA model.pth)",75.1,,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/run_record.json
+wonn_maze_hard,ours,params raw,"396,293",,"52/9000 epochs, 12.7 min, 1 run, seed 137, batch 32 (official 64)","RTX 3070 Ti (8 GB), this repo",wonn_tools/out/train_log.txt; effective not measured

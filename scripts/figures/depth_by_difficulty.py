@@ -14,7 +14,13 @@ week2_results/probe_sweeps.json; a re-run skips everything already cached.
 
 Run:  python scripts/figures/depth_by_difficulty.py [--root REPO_ROOT]
 
-Writes figures/depth_by_difficulty/{depth_by_difficulty.png, data.csv}.
+Writes figures/depth_by_difficulty/{depth_by_difficulty.png,
+depth_by_difficulty_per_seed.png, data.csv, per_seed_tally.csv}.
+
+The per-seed companion figure shows every seed's own curve (thin lines) plus
+the 3-seed mean per model and difficulty; per_seed_tally.csv carries the
+"keeps improving" tally used in the README: a seed keeps improving when its
+strict accuracy at T=32 is at least its strict accuracy at T_train = 8.
 """
 
 import argparse
@@ -46,7 +52,9 @@ SWEEP_T = [1, 2, 4, 8, 12, 16, 24, 32]
 SEEDS = [0, 1, 2]
 N_SEEDS = len(SEEDS)
 T_TRAIN = 8
+MODELS = ["CF-Full", "CF-NoFrag", "RecurrentCNN-fixed", "RecurrentCNN-variable"]
 F8 = "F8 depth by difficulty"
+F8S = "F8 per-seed depth by difficulty"
 
 C_CF_FULL = OKABE_ITO["blue"]
 C_CF_NOFRAG = OKABE_ITO["vermillion"]
@@ -146,6 +154,35 @@ def compute_sweeps(root, specs, data, cache_path):
 # ----------------------------------------------------------------------------
 # Figure
 # ----------------------------------------------------------------------------
+def shared_x_axis(fig, ax):
+    """x-axis styling shared by the mean and per-seed figures: linear in T.
+    On a linear axis the T=1 and T=2 positions are too close for
+    side-by-side tick labels, so those two are staggered onto two rows at
+    their true x positions."""
+    ax.set_xticks(SWEEP_T)
+    seq = [str(T) if T not in (1, 2) else "" for T in SWEEP_T]
+    ax.set_xticklabels(seq)
+    tr = ax.get_xaxis_transform()
+    row1 = mtransforms.offset_copy(tr, fig=fig, x=0.0, y=-4.0, units="points")
+    row2 = mtransforms.offset_copy(tr, fig=fig, x=0.0, y=-18.0, units="points")
+    ax.text(1, 0, "1", ha="center", va="top", fontsize=12, transform=row1)
+    ax.text(2, 0, "2", ha="center", va="top", fontsize=12, transform=row2)
+    ax.set_xlim(-0.5, SWEEP_T[-1] + 1.5)
+    ax.set_xlabel("Test-time horizon T", labelpad=34)
+
+
+def legend_label(key, spec):
+    """Legend text: plain model name plus its full training settings."""
+    name = "RecurrentCNN (fixed T)" if key == "RecurrentCNN-fixed" else key
+    return f"{name}, {spec['epochs']} epochs, {spec['train_T']}"
+
+
+def keeps_improvement(cache, key, panel, seed):
+    """A seed keeps improving beyond the training horizon when its strict
+    accuracy at T=32 is at least its strict accuracy at T_train = 8."""
+    d = cache["sweeps"][key][str(seed)][panel]
+    return d["32"] >= d[str(T_TRAIN)]
+
 def fig8(cache, specs, data, out):
     sweeps = cache["sweeps"]
     xs = list(SWEEP_T)                   # x-axis linear in T
@@ -153,7 +190,7 @@ def fig8(cache, specs, data, out):
     handles = []
     for ax, name in zip(axes, DATASETS):
         grid = data[name].x.shape[-1]
-        for key in ["CF-Full", "CF-NoFrag", "RecurrentCNN-fixed", "RecurrentCNN-variable"]:
+        for key in MODELS:
             spec = specs[key]
             means, sds = [], []
             for T in SWEEP_T:
@@ -162,8 +199,7 @@ def fig8(cache, specs, data, out):
                 means.append(m)
                 sds.append(sd)
             means, sds = np.array(means), np.array(sds)
-            label = (f"{key.replace('-fixed', ' (fixed T)') if key == 'RecurrentCNN-fixed' else key}"
-                     f", {spec['epochs']} epochs, {spec['train_T']}")
+            label = legend_label(key, spec)
             line, = ax.plot(xs, means, color=spec["color"],
                             marker=SEED_MARKER, markersize=4.5, label=label)
             ax.fill_between(xs, np.clip(means - sds, 0.0, 1.0),
@@ -176,21 +212,9 @@ def fig8(cache, specs, data, out):
         if name == "test":
             vline.set_label(f"Training horizon T = {T_TRAIN} (fixed-T models only)")
             handles.append(vline)
-        ax.set_xticks(SWEEP_T)
-        # on a linear axis the T=1 and T=2 positions are too close for
-        # side-by-side tick labels, so those two are staggered onto two rows
-        # at their true x positions
-        seq = [str(T) if T not in (1, 2) else "" for T in SWEEP_T]
-        ax.set_xticklabels(seq)
-        tr = ax.get_xaxis_transform()
-        row1 = mtransforms.offset_copy(tr, fig=fig, x=0.0, y=-4.0, units="points")
-        row2 = mtransforms.offset_copy(tr, fig=fig, x=0.0, y=-18.0, units="points")
-        ax.text(1, 0, "1", ha="center", va="top", fontsize=12, transform=row1)
-        ax.text(2, 0, "2", ha="center", va="top", fontsize=12, transform=row2)
-        ax.set_xlim(-0.5, SWEEP_T[-1] + 1.5)
+        shared_x_axis(fig, ax)
         ax.set_ylim(0, 1.0)
         ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
-        ax.set_xlabel("Test-time horizon T", labelpad=34)
         n = len(data[name])
         ax.set_title(f"{PANEL_TITLES[name]} ({grid}x{grid}, n={n})", pad=12)
     axes[0].set_ylabel("Strict accuracy (exact path)")
@@ -214,17 +238,134 @@ def fig8(cache, specs, data, out):
                    "Threshold 0.5 on sigmoid probabilities; strict = prediction is exactly the "
                    "BFS shortest path (perfect mazes).\n"
                    "Sweeps computed on CPU from the saved checkpoints with cf.train.sweep_model; "
-                   "cached in week2_results/probe_sweeps.json.")
+                   "cache: probe_sweeps.json.")
     assert_no_text_overlaps(fig, F8)
     fig.savefig(out / "depth_by_difficulty.png", dpi=DPI)
     plt.close(fig)
+
+
+def fig8_per_seed(cache, specs, data, out):
+    """Per-seed companion of F8: every seed's own curve (thin lines) plus the
+    3-seed mean (bold), per model and difficulty panel. The seed lines show
+    the spread directly, so no sd band is drawn (stated in the footnote)."""
+    sweeps = cache["sweeps"]
+    xs = list(SWEEP_T)
+    cf_keep = sum(keeps_improvement(cache, m, p, s)
+                  for m in ["CF-Full", "CF-NoFrag"]
+                  for p in DATASETS for s in SEEDS)
+    rcnn_fixed_keep = sum(keeps_improvement(cache, "RecurrentCNN-fixed", p, s)
+                          for p in DATASETS for s in SEEDS)
+    n_cf = 2 * len(DATASETS) * N_SEEDS
+
+    fig, axes = plt.subplots(1, 3, figsize=(16.5, 6.8), sharey=True)
+    handles = []
+    proxy = plt.Line2D([], [], color=C_REF, alpha=0.55, linewidth=1.0,
+                       label="individual seed (thin line)")
+    for ax, name in zip(axes, DATASETS):
+        grid = data[name].x.shape[-1]
+        for key in MODELS:
+            spec = specs[key]
+            for s in SEEDS:
+                ys = [sweeps[key][str(s)][name][str(T)] for T in SWEEP_T]
+                ax.plot(xs, ys, color=spec["color"], alpha=0.55,
+                        linewidth=1.0, zorder=2)
+            means = [mean_sd([sweeps[key][str(s)][name][str(T)]
+                             for s in SEEDS])[0] for T in SWEEP_T]
+            line, = ax.plot(xs, means, color=spec["color"],
+                            marker=SEED_MARKER, markersize=4.5,
+                            linewidth=2.2, zorder=4,
+                            label=legend_label(key, spec))
+            if name == "test":
+                handles.append(line)
+        vline = ax.axvline(T_TRAIN, color=C_REF, linestyle="--", linewidth=1.4,
+                           zorder=1)
+        if name == "test":
+            vline.set_label(f"Training horizon T = {T_TRAIN} (fixed-T models only)")
+            handles.append(vline)
+        shared_x_axis(fig, ax)
+        ax.set_ylim(0, 1.0)
+        ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
+        n = len(data[name])
+        ax.set_title(f"{PANEL_TITLES[name]} ({grid}x{grid}, n={n})", pad=12)
+    axes[0].set_ylabel("Strict accuracy (exact path)")
+    # title states the finding; the two guide lines under it say how to read
+    # the figure. Counts come from the sweeps themselves (keeps-improving
+    # rule: strict at T=32 >= strict at T_train = 8).
+    fig.suptitle(f"At T=32 the CF models hold or beat their T=8 accuracy in "
+                 f"{cf_keep} of {n_cf} seed-panel curves, the fixed-T "
+                 f"RecurrentCNN in {rcnn_fixed_keep} of {len(DATASETS) * N_SEEDS}",
+                 fontsize=15, x=0.05, y=0.985, ha="left", va="top")
+    fig.text(0.05, 0.925,
+             "Reading guide: one colour per model (legend); thin lines are the "
+             "individual seeds, the bold line with dots is their mean.\n"
+             "Right of the dashed line is untested depth; a seed \"keeps "
+             "improving\" when its strict accuracy at T=32 is at least its "
+             f"accuracy at the training horizon T={T_TRAIN}.",
+             fontsize=10.5, ha="left", va="top", color="#333333")
+    # explicit layout (same deep label stack as F8), then the legend is
+    # placed by measurement a few px below the axes' tight bbox
+    fig.subplots_adjust(left=0.05, right=0.985, top=0.78, bottom=0.16,
+                        wspace=0.24)
+    fig.canvas.draw()
+    bb = axes[1].get_tightbbox(fig.canvas.get_renderer())
+    leg = axes[1].legend(handles=handles + [proxy], loc="upper center", ncol=3,
+                         fontsize=10, bbox_transform=fig.transFigure,
+                         bbox_to_anchor=(0.5, (bb.y0 - 6) / fig.bbox.y1))
+    place_footnote(fig, axes[1],
+                   f"n = {N_SEEDS} seeds per model (seeds 0, 1, 2); thin lines = strict accuracy "
+                   "of each seed, bold line with dots = mean over seeds; no sd band is drawn "
+                   "because the spread is shown directly by the seed lines.\n"
+                   f"Vertical dashed line: training horizon T = {T_TRAIN} of the fixed-T models; "
+                   "the variable-T RecurrentCNN was trained with T ~ U{4..16} per batch.\n"
+                   "Threshold 0.5 on sigmoid probabilities; strict = prediction is exactly the "
+                   "BFS shortest path (perfect mazes).\n"
+                   "Sweeps computed on CPU from the saved checkpoints with cf.train.sweep_model; "
+                   "cache: probe_sweeps.json. "
+                   "Tally per model and panel in per_seed_tally.csv.")
+    assert_no_text_overlaps(fig, F8S)
+    fig.savefig(out / "depth_by_difficulty_per_seed.png", dpi=DPI)
+    plt.close(fig)
+
+
+def write_tally(cache, out):
+    """"keeps improving" tally for the README, per (model, panel): one row per
+    seed (strict accuracy at T_train = 8 and at T=32, plus the 0/1 verdict)
+    and one aggregate row per (model, panel) counting the seeds that keep
+    improving. Rule: a seed keeps improving when its strict accuracy at T=32
+    is at least its strict accuracy at T_train = 8."""
+    rows = []
+    for name in DATASETS:
+        for key in MODELS:
+            for s in SEEDS:
+                d = cache["sweeps"][key][str(s)][name]
+                v_train, v32 = d[str(T_TRAIN)], d["32"]
+                rows.append(dict(model=key, panel=name,
+                                 seed=f"seed{s} (n=1 run)",
+                                 strict_at_T_train=f"{v_train:.4f}",
+                                 strict_at_T32=f"{v32:.4f}",
+                                 keeps_improving=int(keeps_improvement(cache, key, name, s))))
+            keep_n = sum(keeps_improvement(cache, key, name, s) for s in SEEDS)
+            rows.append(dict(model=key, panel=name,
+                             seed=f"ALL ({N_SEEDS} seeds)",
+                             strict_at_T_train="",
+                             strict_at_T32="",
+                             keeps_improving=keep_n))
+    path = out / "per_seed_tally.csv"
+    with path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["model", "panel", "seed",
+                                                "strict_at_T_train",
+                                                "strict_at_T32",
+                                                "keeps_improving"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
 
 
 def write_csv(cache, out):
     rows = []
     sweeps = cache["sweeps"]
     for name in DATASETS:
-        for key in ["CF-Full", "CF-NoFrag", "RecurrentCNN-fixed", "RecurrentCNN-variable"]:
+        for key in MODELS:
             for T in SWEEP_T:
                 vals = [sweeps[key][str(s)][name][str(T)] for s in SEEDS]
                 m, sd = mean_sd(vals)
@@ -251,13 +392,28 @@ def main():
     cache = compute_sweeps(root, specs, data,
                            root / "week2_results" / "probe_sweeps.json")
     fig8(cache, specs, data, out)
+    fig8_per_seed(cache, specs, data, out)
     rows = write_csv(cache, out)
+    tally_rows = write_tally(cache, out)
 
     print(f"\nWrote {len(rows)} F8 rows -> {out / 'data.csv'}")
-    print("Figure:", out / "depth_by_difficulty.png")
+    print(f"Wrote {len(tally_rows)} tally rows -> {out / 'per_seed_tally.csv'}")
+    print("Figures:", out / "depth_by_difficulty.png", ",", out / "depth_by_difficulty_per_seed.png")
+    # tallies for the README: keeps improving (strict at T=32 >= strict at
+    # T_train = 8) vs drops/collapses, per model and difficulty
+    print(f"\nKeeps-improving tally (strict at T=32 >= strict at T={T_TRAIN}):")
+    for key in MODELS:
+        for name in DATASETS:
+            keep_n = sum(keeps_improvement(cache, key, name, s) for s in SEEDS)
+            detail = ", ".join(
+                f"seed{s}: {cache['sweeps'][key][str(s)][name][str(T_TRAIN)]:.3f}"
+                f"->{cache['sweeps'][key][str(s)][name]['32']:.3f}"
+                f"({'keeps' if keeps_improvement(cache, key, name, s) else 'drops'})"
+                for s in SEEDS)
+            print(f"  {name:7s} {key:20s} {keep_n}/{N_SEEDS} seeds keep improving  [{detail}]")
     # key numbers for the README
     for name in DATASETS:
-        for key in ["CF-Full", "CF-NoFrag", "RecurrentCNN-fixed", "RecurrentCNN-variable"]:
+        for key in MODELS:
             at = {T: mean_sd([cache["sweeps"][key][str(s)][name][str(T)] for s in SEEDS])
                   for T in SWEEP_T}
             best_T = max(SWEEP_T, key=lambda T: (at[T][0], -T))

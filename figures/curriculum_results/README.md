@@ -16,7 +16,7 @@ All plotted values (means, sds where applicable, and per-seed values) are export
 
 ## Training budget x fragmentation
 
-Packet figure: F7
+Packet figure F7, part 2 of 2 (other part: figures/main_results/main_results.png)
 
 ![Training budget x fragmentation: test strict at validation-selected T* vs training budget](budget_vs_fragmentation.png)
 
@@ -64,7 +64,7 @@ same T* = 16 (16, 16, 16).
 
 ## Depth extrapolation (test-time T sweep)
 
-Packet figure: F8
+Packet figure F8, part 2 of 2 (other part: figures/depth_by_difficulty/depth_by_difficulty.png)
 
 ![Depth extrapolation: test strict vs test-time T for four models](depth_extrapolation.png)
 

@@ -89,7 +89,7 @@ Per-bin strict solve rate (mean over 3 seeds +- sample sd, each seed at its own 
 
 ## Thinking steps (`thinking_steps.png`)
 
-Packet figure: F4
+Packet figure F4, part 2 of 2 (other part: figures/commitment/commitment_maze0.png, commitment_maze248.png)
 
 **Caption.** Two test mazes, the thresholded prediction after t = 1, 2, 4, 8, 12, 16, 24, 32 recurrence steps (one shared rollout per model, read out at each t). Maze rows: CF-Full (hid 16, 160 epochs, trained at fixed T = 8) above RecurrentCNN (hid 22, trained at fixed T = 8, 40 epochs); both seed 0. The left column repeats the ground truth; the maze selection rule: the test maze with the most wrong cells for each of the two models at its own T\* (seed 0, no repeats, ties by maze index) - i.e. one worst case per model under that shared rule, and test maze 256 = worst case of CF-Full (hid 16, 160 epochs, trained at fixed T=8), 38 wrong cells; test maze 113 = worst remaining case of RecurrentCNN (hid 22, 40 epochs, trained at fixed T=8), 6 wrong cells: its outright worst maze, test maze 256 (9 wrong cells), was already picked for CF-Full, 160 epochs, so the shared no-repeats rule moves to the next-worst maze; 3 mazes tie at that wrong-cell count, tie broken by maze index.
 **How to read.** Same colour code as the path gallery: blue = predicted cell on the true path, vermillion = extra predicted cell, purple = missed true-path cell, black outline = true path, circle = start, star = goal. The number under each panel is the wrong-cell count at that t ("solved" = 0 wrong cells).

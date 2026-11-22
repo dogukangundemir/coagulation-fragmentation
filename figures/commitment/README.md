@@ -18,7 +18,7 @@ Mazes (level-5 test split, 1000 mazes, 11x11, same pipeline as `run_week2.load_d
 
 **Caveats.** Single maze, single seed (0); median + IQR over cells within this one maze (n = 7 true-path and 42 off-path free cells, no averaging over mazes); wall cells are excluded from both groups (the model can still assign them probability, which counts as wrong cells in the strict metric); t = 9..16 is beyond the training rollout depth T = 8; the IQR is a within-maze spread, not a seed uncertainty.
 
-**Packet figure: F4**
+**Packet figure F4, part 1 of 2 (other part: figures/maze_paths/thinking_steps.png)**
 
 ---
 
@@ -32,5 +32,5 @@ Mazes (level-5 test split, 1000 mazes, 11x11, same pipeline as `run_week2.load_d
 
 **Caveats.** Single maze, single seed (0); median + IQR over cells within this one maze (n = 39 true-path and 10 off-path free cells, no averaging over mazes); wall cells are excluded from both groups (the model can still assign them probability, which counts as wrong cells in the strict metric); t = 9..16 is beyond the training rollout depth T = 8; the IQR is a within-maze spread, not a seed uncertainty.
 
-**Packet figure: F4**
+**Packet figure F4, part 1 of 2 (other part: figures/maze_paths/thinking_steps.png)**
 

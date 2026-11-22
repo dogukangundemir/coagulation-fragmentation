@@ -1,7 +1,15 @@
 # Depth by difficulty: strict accuracy vs test-time horizon T
 
-Packet figure: F8. This README documents the figure file
-`depth_by_difficulty.png` in this folder.
+Packet figure F8, part 1 of 2 (other part: figures/curriculum_results/depth_extrapolation.png). This README documents the figure files in this folder:
+
+- `depth_by_difficulty.png` (F8): mean strict accuracy plus a sample-sd
+  band per model and difficulty (documented below).
+- `depth_by_difficulty_per_seed.png` (F8 companion, documented in the last
+  section): every seed's own curve plus the mean, and the "keeps improving
+  vs collapse" tally beyond the training horizon.
+- `data.csv`: per-point means, sds and per-seed values for both figures.
+- `per_seed_tally.csv`: per-seed strict accuracy at T=8 and T=32 and the
+  keeps-improving verdict for every model x difficulty.
 
 ## Caption
 
@@ -55,15 +63,16 @@ fixed-T models only).
 
 - Plotting script: `scripts/figures/depth_by_difficulty.py` (run from the repo
   root; re-runnable, reuses the cached sweeps).
-- Sweep cache: `week2_results/probe_sweeps.json` — strict accuracy per
+- Sweep cache: `probe_sweeps.json` (results archive at the repo root; the
+  plotting script writes and reads it there) — strict accuracy per
   (model, seed, dataset, T), computed on CPU from the saved checkpoints with
   `cf.train.sweep_model` (one rollout per batch, scored with the repo's
   `evaluate_mask`/`summarize` path, threshold 0.5).
-- Checkpoints: `week2_results/followups/E1_CF-Full_seed{0,1,2}.pt` (160
-  epochs), `week2_results/followups/E4_CF-NoFrag160_seed{0,1,2}.pt` (160
-  epochs, hid 18), `week2_results/RecurrentCNN_seed{0,1,2}.pt` (40 epochs,
-  fixed T=8), `week2_results/followups/E3_RecurrentCNN_seed{0,1,2}.pt`
-  (40 epochs, variable T).
+- Checkpoints (results archive at the repo root; exact paths in the plotting
+  script): `followups/E1_CF-Full_seed{0,1,2}.pt` (160 epochs),
+  `followups/E4_CF-NoFrag160_seed{0,1,2}.pt` (160 epochs, hid 18),
+  `RecurrentCNN_seed{0,1,2}.pt` (40 epochs, fixed T=8),
+  `followups/E3_RecurrentCNN_seed{0,1,2}.pt` (40 epochs, variable T).
 - Data: curriculum level-5 test split and probe levels 7/9, built with
   `cf.data.curriculum` — fixed seeded splits from numpy `default_rng(0)`
   (4000/1000/1000 train/val/test from the level-5 pool, 1000 mazes per
@@ -95,3 +104,113 @@ fixed-T models only).
   the legend entry states.
 - Probe levels 7 and 9 are harder, larger mazes never seen in training;
   absolute accuracies there are expectedly lower and seed spread larger.
+
+---
+
+# Per-seed companion: every seed's curve beyond the training horizon
+
+File: `depth_by_difficulty_per_seed.png` in this folder.
+
+## Caption
+
+Per-seed view of the same sweeps as F8: strict accuracy (prediction is
+exactly the BFS shortest path) vs test-time horizon T, one panel per
+difficulty (level-5 test, 11x11, n=1000; probe level 7, 15x15, n=1000;
+probe level 9, 19x19, n=1000), T = 1, 2, 4, 8, 12, 16, 24, 32 with frozen
+weights. For each model, the thin lines are its three seeds (0, 1, 2) and
+the bold line with dots is their mean. Four models, training settings in
+the legend: CF-Full (hid 16, 160 epochs, trained at fixed T=8), CF-NoFrag
+(hid 18, 160 epochs, trained at fixed T=8), RecurrentCNN (hid 22, 40
+epochs, trained at fixed T=8) and RecurrentCNN (hid 22, 40 epochs, trained
+at variable T, drawn from U{4..16} per batch). The vertical dashed line
+marks the training horizon T=8 of the fixed-T models. The two guide lines
+under the title state how to read the figure and the tally rule.
+
+## How to read
+
+- x-axis: test-time horizon T, linear, the same eight swept values as F8
+  (T=1 and T=2 tick labels staggered onto two rows at their true
+  positions); y-axis: strict accuracy from 0 to 1.
+- One colour per model (same as F8: blue = CF-Full, vermillion = CF-NoFrag,
+  reddish purple = RecurrentCNN fixed T, bluish green = RecurrentCNN
+  variable T). Thin lines = individual seeds; bold line with dots = mean
+  over the 3 seeds.
+- There is no sd band in this figure: the thin per-seed lines show the
+  spread directly, so nothing is aggregated without being shown per seed
+  and no band needs clipping. (The companion figure F8 draws its sd bands
+  clipped to [0, 1], as stated in its section above.)
+- Everything right of the dashed line (T=8) is untested depth for models
+  trained at fixed T=8.
+
+## Key takeaway (numbers from data.csv and per_seed_tally.csv)
+
+Tally rule, stated on the figure and applied uniformly: a seed "keeps
+improving" when its strict accuracy at T=32 is at least its strict
+accuracy at the training horizon T_train = 8; otherwise it drops.
+"Collapse" is used only for a fall to 0.000.
+
+Seeds that keep improving (strict at T=32 >= strict at T=8), out of
+n = 3 seeds per cell:
+
+| Model (training budget) | Level-5 test | Probe 7 | Probe 9 |
+|---|---|---|---|
+| CF-Full (160 epochs, fixed T=8) | 2/3 | 3/3 | 3/3 |
+| CF-NoFrag (160 epochs, fixed T=8) | 2/3 | 3/3 | 3/3 |
+| RecurrentCNN fixed T (40 epochs) | 0/3 | 0/3 | 0/3 |
+| RecurrentCNN variable T (40 epochs) | 0/3 | 1/3 | 2/3 |
+
+- Every CF seed keeps improving on the probe panels (probe 7: 0.144-0.286
+  at T=8 rising to 0.333-0.926 at T=32; probe 9: 0.012-0.054 rising to
+  0.197-0.810). On the level-5 test one CF seed in three drops (CF-Full
+  seed 2: 0.707 -> 0.520; CF-NoFrag seed 0: 0.697 -> 0.542) while the
+  other two keep improving (e.g. CF-Full seed 1: 0.754 -> 0.974). So the
+  mean gain past T=8 is not guaranteed for every seed, but a drop never
+  removes more than about a quarter of the seed's T=8 accuracy.
+- The RecurrentCNN trained at fixed T=8 collapses in every seed on every
+  panel: 0 of 9 seed-panel curves keep improving and all nine fall to
+  exactly 0.000 at T=32 (e.g. test: 0.940, 0.948, 0.919 at T=8 ->
+  0.000, 0.000, 0.000 at T=32).
+- Variable-T training does not fix this at T=32 (test: 0/3, 0.831, 0.900,
+  0.797 -> 0.358, 0.385, 0.515). Its 3 keeps on probe panels are small
+  differences, two of them near zero (probe 9: seed 0 0.026 -> 0.041, seed
+  2 0.019 -> 0.029); the third (probe 7, seed 2: 0.233 -> 0.236) is also a
+  flat floor rather than a real gain.
+- Inconclusive: with n = 3 seeds, CF-Full and CF-NoFrag are not
+  distinguishable in robustness past T=8 (same 8/9 tally, and their T=32
+  means lie within each other's seed spread, e.g. probe 9 at T=32:
+  0.555 +- 0.319 vs 0.504 +- 0.263), so any CF-Full-vs-CF-NoFrag ordering
+  is inconclusive.
+
+## Data source
+
+- Plotting script: `scripts/figures/depth_by_difficulty.py` (same run
+  produces both figures; re-runnable, reuses the cached sweeps).
+- Same sweep cache, checkpoints and data as F8:
+  `probe_sweeps.json` (results archive at the repo root; strict accuracy
+  per model, seed, dataset and T, computed on CPU from the saved checkpoints
+  with `cf.train.sweep_model`, threshold 0.5); `data.csv` in this folder
+  (per-seed values in the seed0/seed1/seed2 columns); tally:
+  `per_seed_tally.csv` in this folder (per-seed strict accuracy at T=8 and
+  T=32 and the verdict, plus the per model-panel counts used in the table
+  above).
+
+## Caveats
+
+- n = 3 seeds per model; each tally cell is 3 binary outcomes, so the
+  counts are coarse and every per-seed number is a single run.
+- "Keeps improving" at T=32 vs T=8 is a coarse two-point rule: a seed can
+  rise at T=16 or T=24 and still be counted as dropping if it regresses by
+  T=32 (CF-Full seed 2 on the test panel behaves like this), or keep a
+  flat floor and be counted as improving (RecurrentCNN variable T on
+  probe 9).
+- For the RecurrentCNN trained at variable T there is no single training
+  horizon; the rule was applied at T=8 (one value inside its training
+  range 4..16) for uniformity, as stated on the figure.
+- Small-sample honesty: differences between models within the seed spread
+  are inconclusive (see the CF-Full vs CF-NoFrag point above); 3 seeds is
+  preliminary for any stronger claim.
+- Training budgets are not matched across families (CF 160 epochs vs
+  RecurrentCNN 40 epochs); the clean like-for-like contrasts are within
+  each family (CF-Full vs CF-NoFrag; RecurrentCNN fixed vs variable T).
+  The sweeps are inference-only (minutes of CPU per model), run on CPU
+  from the saved checkpoints.
