@@ -12,7 +12,9 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root: maze_cf
+_REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO))                    # repo root: cf package
+sys.path.insert(0, str(_REPO / "milestone1"))    # milestone1: maze_cf
 
 from cf.models.cf import CFNet, MODEL_SPECS
 import maze_cf

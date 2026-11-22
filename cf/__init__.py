@@ -1,7 +1,7 @@
 """cf — shared Coagulation-Fragmentation looped-reasoning code.
 
-Extracted verbatim from CF_Milestone2_Week1_HF.ipynb (Week 1) and maze_cf.py
-(Milestone 1) so the notebooks, Colab and local experiments share one source
+Extracted verbatim from CF_Milestone2_Week1_HF.ipynb (Week 1) and
+milestone1/maze_cf.py (Milestone 1) so the notebooks, Colab and local experiments share one source
 of truth.  See README.md for the project background.
 
 Modules

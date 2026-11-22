@@ -37,7 +37,8 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Patch, Rectangle
 from matplotlib.transforms import Bbox
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))                      # cf.models.cf, maze_cf
+sys.path.insert(0, str(ROOT))                      # cf.models.cf
+sys.path.insert(0, str(ROOT / "milestone1"))       # maze_cf
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # style
 from style import DPI, OKABE_ITO, apply_style       # noqa: E402
 
@@ -439,7 +440,7 @@ and goal are {n['shortest_path_length']} BFS steps apart ({n['path_cells_in_mask
 cells in the ground-truth shortest-path mask the readout is trained on, start
 and goal included).
 
-**Data source.** `maze_cf.py` (`make_sample`, `bfs_distances`,
+**Data source.** `milestone1/maze_cf.py` (`make_sample`, `bfs_distances`,
 `shortest_path_mask`) for the maze and path; `cf/models/cf.py` for the stage
 names and shapes; `week2_results/valT_selection.json` (`T_train` = 8) for
 the training depth. Maze facts are in `data.csv` (keys `maze_size`,

@@ -72,7 +72,7 @@ and goal are 7 BFS steps apart (8
 cells in the ground-truth shortest-path mask the readout is trained on, start
 and goal included).
 
-**Data source.** `maze_cf.py` (`make_sample`, `bfs_distances`,
+**Data source.** `milestone1/maze_cf.py` (`make_sample`, `bfs_distances`,
 `shortest_path_mask`) for the maze and path; `cf/models/cf.py` for the stage
 names and shapes; `week2_results/valT_selection.json` (`T_train` = 8) for
 the training depth. Maze facts are in `data.csv` (keys `maze_size`,

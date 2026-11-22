@@ -1,6 +1,11 @@
-"""Milestone-1 acceptance tests for maze_cf.  Run: python -m pytest -q test_maze_cf.py"""
+"""Milestone-1 acceptance tests for maze_cf.  Run: python -m pytest -q milestone1/test_maze_cf.py"""
+import sys
+from pathlib import Path
+
 import numpy as np
 import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # milestone1 dir: maze_cf
 
 import maze_cf as m
 

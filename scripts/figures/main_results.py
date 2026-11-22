@@ -26,7 +26,7 @@ recorded measurement in week2_results/, so this script runs the project's
 own protocol (scripts/run_week2.py:effective_n_params, one training-style
 forward+backward on a fixed synthetic curriculum batch, CPU, T=8) and
 plots the measured value. With fragmentation=False the split-flux output
-head is computed but immediately discarded (maze_cf.py), so those entries
+head is computed but immediately discarded (milestone1/maze_cf.py), so those entries
 receive zero gradient and are not effective.
 Each bar carries a sample-sd (n-1) error line and the individual
 seed dots; the printed value is "mean +- sample sd". Models with fewer
