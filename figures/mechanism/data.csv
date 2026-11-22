@@ -1,25 +1,87 @@
 figure,item,quantity,value,detail
-F3,maze,grid,11 x 11 cells,
-F3,cells,n_total,121,one maze
-F3,cells,n_wall,72,count
-F3,cells,n_free,42,count
-F3,cells,n_path,5,count
-F3,cells,n_goal,1,count
-F3,cells,n_start,1,count
-F3,pca,var_pc1,0.396031,fraction
-F3,pca,var_pc2,0.273278,fraction
-F3,pca,sep_wall_free_sd,1.878,centroid distance in pooled sd units
-F3,pca,sep_path_free_sd,0.456,centroid distance in pooled sd units
-F3,c1_0,min_all_16_ch,0.243757,
-F3,c1_0,max_shown_8_ch,3.99935,
-F3,c1_0,max_ch1,2.71854,
-F3,c1_0,max_ch2,3.99935,
-F3,c1_0,max_ch3,1.95479,
-F3,c1_0,max_ch4,3.49346,
-F3,c1_0,max_ch5,2.3556,
-F3,c1_0,max_ch6,3.5533,
-F3,c1_0,max_ch7,1.33475,
-F3,c1_0,max_ch8,1.61945,
+F3,cf,n_cells,121,one instance
+F3,cf,n_wall,72,count
+F3,cf,n_free,42,count
+F3,cf,n_path,5,count
+F3,cf,n_goal,1,count
+F3,cf,n_start,1,count
+F3,cf,n_distinct_embeddings,81,unique per-cell embedding vectors
+F3,cf,field_min,0.243757,all channels
+F3,cf,field_max,3.99935,all channels
+F3,cf,max_shown_ch1,2.71854,scale of shown channel map
+F3,cf,max_shown_ch2,3.99935,scale of shown channel map
+F3,cf,max_shown_ch3,1.95479,scale of shown channel map
+F3,cf,max_shown_ch4,3.49346,scale of shown channel map
+F3,cf,max_shown_ch5,2.3556,scale of shown channel map
+F3,cf,max_shown_ch6,3.5533,scale of shown channel map
+F3,cf,max_shown_ch7,1.33475,scale of shown channel map
+F3,cf,max_shown_ch8,1.61945,scale of shown channel map
+F3,cf,instance,level-5 test maze index 0,from --maze-index
+F3,cf,grid,11 x 11 cells,
+F3,cf,n_shown_of_channels,8 of 16,first 8 channels shown
+F3,cf,epochs,160,"single run, seed 0 (of the 3-seed follow-up family)"
+F3,cf,T_train,8,fixed during training
+F3,cf,ckpt,week2_results/followups/E1_CF-Full_seed0.pt,repo-relative
+F3,cf,var_pc1,0.396031,fraction
+F3,cf,var_pc2,0.273278,fraction
+F3,cf,sep_wall_free_sd,1.878,centroid distance in pooled sd units
+F3,cf,sep_path_free_sd,0.456,centroid distance in pooled sd units
+F3,akorn,n_cells,81,one instance
+F3,akorn,n_blank,43,count
+F3,akorn,n_clue,38,count
+F3,akorn,n_distinct_embeddings,10,unique per-cell embedding vectors
+F3,akorn,field_min,-3.95049,all channels
+F3,akorn,field_max,4.17338,all channels
+F3,akorn,max_shown_ch1,2.32512,scale of shown channel map
+F3,akorn,max_shown_ch2,2.57043,scale of shown channel map
+F3,akorn,max_shown_ch3,1.65424,scale of shown channel map
+F3,akorn,max_shown_ch4,2.73294,scale of shown channel map
+F3,akorn,max_shown_ch5,2.20032,scale of shown channel map
+F3,akorn,max_shown_ch6,2.50931,scale of shown channel map
+F3,akorn,max_shown_ch7,1.8324,scale of shown channel map
+F3,akorn,max_shown_ch8,1.74868,scale of shown channel map
+F3,akorn,instance,sudoku test puzzle index 0,SATNet sudoku test split (indices 9000-9999)
+F3,akorn,grid,9 x 9 cells,
+F3,akorn,n_shown_of_channels,8 of 512,first 8 channels shown
+F3,akorn,epochs_run,100,official epochs 100; single unseeded run: preliminary (fewer than 3 seeds)
+F3,akorn,seeds_run,1,single run: preliminary
+F3,akorn,T,16,"model constructor, matches official command in run record"
+F3,akorn,ckpt,akorn/runs/sudoku_akorn/ema_99.pth,final EMA checkpoint per run record
+F3,akorn,var_pc1,0.403401,fraction
+F3,akorn,var_pc2,0.092244,fraction
+F3,akorn,sep_blank_clue_sd,4.005,centroid distance in pooled sd units
+F3,akorn,spread_blank_pc,0.000,max extent of one cell type in the PC plane
+F3,akorn,spread_clue_pc,31.819,max extent of one cell type in the PC plane
+F3,wonn,n_cells,900,one instance
+F3,wonn,n_wall,312,count
+F3,wonn,n_free,586,count
+F3,wonn,n_start,1,count
+F3,wonn,n_goal,1,count
+F3,wonn,n_distinct_embeddings,4,unique per-cell embedding vectors
+F3,wonn,field_min,-3.89766,all channels
+F3,wonn,field_max,2.93075,all channels
+F3,wonn,max_shown_ch1,1.2691,scale of shown channel map
+F3,wonn,max_shown_ch2,2.25369,scale of shown channel map
+F3,wonn,max_shown_ch3,1.46314,scale of shown channel map
+F3,wonn,max_shown_ch4,2.21213,scale of shown channel map
+F3,wonn,max_shown_ch5,1.44334,scale of shown channel map
+F3,wonn,max_shown_ch6,2.07189,scale of shown channel map
+F3,wonn,max_shown_ch7,1.26105,scale of shown channel map
+F3,wonn,max_shown_ch8,0.74206,scale of shown channel map
+F3,wonn,instance,maze index 0,"maze-30x30-hard-1k test split, converted per run record"
+F3,wonn,grid,30 x 30 cells,
+F3,wonn,n_shown_of_channels,8 of 128,first 8 channels shown
+F3,wonn,epochs_trained,150,"official epochs 9000: reduced budget, not a reproduction"
+F3,wonn,seed,137,single seed: preliminary
+F3,wonn,T,24,run record config
+F3,wonn,ckpt,WONN/runs/maze/wonn_reduced_L1T24_ch128_s137_bs32/ema_model.pth,final EMA checkpoint per run record
+F3,wonn,var_pc1,0.994771,fraction
+F3,wonn,var_pc2,0.003593,fraction
+F3,wonn,d_wall_free_pc,18.087,centroid distance in PC units; every cell of both types holds the same single point
+F3,wonn,spread_wall_pc,0.000,max extent of one cell type in the PC plane
+F3,wonn,spread_free_pc,0.000,max extent of one cell type in the PC plane
+F3,wonn,spread_start_pc,0.000,max extent of one cell type in the PC plane
+F3,wonn,spread_goal_pc,0.000,max extent of one cell type in the PC plane
 F5,config,T,64,rollout steps
 F5,config,n_mazes,64,"level-5 test split, first N"
 F5,tolerance,relative_mass_drift_max,1.0e-05,

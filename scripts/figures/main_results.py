@@ -14,7 +14,18 @@ Reads (paths derived from this file's location, or --root override):
 
 Writes figures/main_results/{main_results.png, data.csv}.
 
+Optionally adds the CF-families group from an external, read-only results
+tree, given on the command line (--families-dir) or via the CF_FAMILIES_DIR
+environment variable. The directory is either the cf-families working copy
+root (it then must contain results/ladder_train3/results.json) or the
+ladder_train3 directory itself. It contributes one row:
+  B-WallAware ladder (BD-WallAware), 160 planned epochs per seed,
+  n = 3 seeds, test strict at T=8 and at T* (results/ladder_train3).
+Without it the figure keeps its previous two-panel content (the script
+says so on stdout).
+
 Run:  python scripts/figures/main_results.py [--root REPO_ROOT]
+                          [--families-dir DIR | CF_FAMILIES_DIR=DIR]
 
 For every model two paired horizontal bars are drawn: a faded bar for the
 trained depth T=8 and a solid bar for the validation-selected depth T*
@@ -37,6 +48,7 @@ with the current data every run has n = 3 seeds, so no flag applies.
 import argparse
 import csv
 import json
+import os
 import statistics
 import sys
 import textwrap
@@ -58,7 +70,31 @@ FAMILY_COLORS = {
     "CF-WallAware": OKABE_ITO["orange"],
     "RecurrentCNN fixed": OKABE_ITO["reddish_purple"],
     "RecurrentCNN variable": OKABE_ITO["bluish_green"],
+    "B-WallAware ladder": OKABE_ITO["sky_blue"],
 }
+
+
+def ladder_results_dir(argv=None):
+    """Resolve the external CF-families ladder results directory, or None.
+
+    --families-dir / CF_FAMILIES_DIR may point either at the cf-families
+    working-copy root (containing results/ladder_train3) or at the
+    ladder_train3 directory itself. Returns None when neither is given:
+    the figure then keeps its previous two-panel content.
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--families-dir", type=Path, default=None)
+    args, _ = p.parse_known_args(argv)
+    d = args.families_dir or os.environ.get("CF_FAMILIES_DIR")
+    if not d:
+        return None
+    d = Path(d)
+    for cand in (d, d / "results" / "ladder_train3"):
+        if (cand / "results.json").is_file():
+            return cand
+    sys.exit(f"main_results: no results.json under {d} "
+             f"(expected results/ladder_train3/results.json)")
 
 
 def repo_root(argv=None):
@@ -306,24 +342,89 @@ def build_rows(d, eff_nofrag16=None):
     # budget, ascending at T*, so the best model sits at the top row).
     rows.sort(key=lambda r: (r["epochs"], statistics.mean(r["ts"])))
     for row in rows:
-        n = len(row["ts"])
-        assert n == len(row["t8"]) == len(row["T_star"]), row["key"]
-        row["n"] = n
-        row["preliminary"] = n < 3
-        row["t8_mean"] = statistics.mean(row["t8"])
-        row["t8_sd"] = statistics.stdev(row["t8"]) if n > 1 else 0.0
-        row["ts_mean"] = statistics.mean(row["ts"])
-        row["ts_sd"] = statistics.stdev(row["ts"]) if n > 1 else 0.0
-        if row["preliminary"]:
-            row["name"] += f"\n(preliminary, n = {n})"
+        finalize_row(row, group="budget40" if row["epochs"] == 40 else "budget160")
     return rows
+
+
+def finalize_row(row, group):
+    n = len(row["ts"])
+    assert n == len(row["t8"]) == len(row["T_star"]), row["key"]
+    row["group"] = group
+    row["n"] = n
+    row["preliminary"] = n < 3
+    row["t8_mean"] = statistics.mean(row["t8"])
+    row["t8_sd"] = statistics.stdev(row["t8"]) if n > 1 else 0.0
+    row["ts_mean"] = statistics.mean(row["ts"])
+    row["ts_sd"] = statistics.stdev(row["ts"]) if n > 1 else 0.0
+    if row["preliminary"]:
+        row["name"] += f"\n(preliminary, n = {n})"
+
+
+def load_ladder_row(ladder_dir):
+    """Row for the CF-families group: B-WallAware ladder (BD-WallAware),
+    160 planned epochs per seed, seeds 0/1/2, from the external read-only
+    results tree (results/ladder_train3). Every value is read as recorded
+    from results.json plus the per-seed ladder_metrics.json sidecars.
+
+    Wall minutes are cumulative across the seeds' two training sessions
+    (the runs were resumed from checkpoints); seed 2's prior-session
+    minutes are an estimate from the per-epoch rate of seeds 0/1 (flagged
+    in the payload, recorded here in the sources string).
+    """
+    res = json.loads((ladder_dir / "results.json").read_text())
+    per_seed = sorted(res["per_seed"], key=lambda r: r["seed"])
+    assert res["model"] == "BD-WallAware", res["model"]
+    assert res["label"].startswith("planned budget"), res["label"]
+    cfg = res["config"]
+    assert len(per_seed) == 3 and sorted(res["seeds"]) == [0, 1, 2]
+    for r in per_seed:
+        assert r["epochs_done"] == cfg["epochs_planned"], r
+        assert not r["stopped_early"], r
+    metrics = []
+    for r in per_seed:
+        m = json.loads((ladder_dir / f"seed{r['seed']}"
+                        / "ladder_metrics.json").read_text())
+        assert m["config"]["model"] == "BD-WallAware"
+        assert m["training"]["epochs_done"] == cfg["epochs_planned"]
+        metrics.append(m)
+    raw = {m["params"]["raw"] for m in metrics}
+    eff = {m["params"]["effective"] for m in metrics}
+    assert len(raw) == len(eff) == 1, "params differ between seeds"
+    hw = {(m["hardware"]["device"], m["hardware"]["device_name"])
+          for m in metrics}
+    assert len(hw) == 1, "hardware differs between seeds"
+    device, device_name = hw.pop()
+    est = [r["wall_minutes_prev_estimated"] for r in per_seed]
+    note = (""
+            if not any(est)
+            else " (seed %d's prior-session minutes estimated from the "
+                 "per-epoch rate of the other seeds)" % per_seed[est.index(True)]["seed"])
+    return dict(
+        key="wladder_160", family="B-WallAware ladder", epochs=160,
+        name=("B-WallAware ladder (BD-WallAware), hid 16, K 4 rungs\n"
+              f"{raw.pop():,} raw / {eff.pop():,} eff. params"),
+        t8=[r["strict_T_train"] for r in per_seed],
+        ts=[r["strict_T_star"] for r in per_seed],
+        T_star=[r["T_star"] for r in per_seed],
+        params_raw=metrics[0]["params"]["raw"],
+        params_eff=metrics[0]["params"]["effective"],
+        minutes=statistics.mean(r["wall_minutes"] for r in per_seed),
+        hardware=f"{device_name} ({device})",
+        sources=("external cf-families results tree, read-only, "
+                 "via --families-dir or CF_FAMILIES_DIR: "
+                 "results/ladder_train3/results.json (per-seed strict at "
+                 "T_train/T*, T*, cumulative wall minutes) and "
+                 "seed*/ladder_metrics.json (params, hardware, epochs); "
+                 f"wall minutes cumulative across two sessions{note}"),
+    )
 
 
 def write_csv(rows, out):
     csv_path = out / "data.csv"
     with csv_path.open("w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["model", "family", "epochs", "n_seeds", "preliminary",
+        w.writerow(["model", "family", "group", "epochs", "n_seeds",
+                    "preliminary",
                     "params_raw", "params_effective",
                     "test_strict_T8_seed0", "test_strict_T8_seed1",
                     "test_strict_T8_seed2", "T8_mean", "T8_sample_sd",
@@ -333,7 +434,8 @@ def write_csv(rows, out):
                     "train_minutes_mean_per_seed", "hardware", "sources"])
         for r in rows:
             w.writerow([
-                r["name"].split("\n")[0], r["family"], r["epochs"], r["n"],
+                r["name"].split("\n")[0], r["family"], r["group"],
+                r["epochs"], r["n"],
                 int(r["preliminary"]), r["params_raw"], r["params_eff"],
                 *r["t8"], f"{r['t8_mean']:.6f}", f"{r['t8_sd']:.6f}",
                 *r["ts"], f"{r['ts_mean']:.6f}", f"{r['ts_sd']:.6f}",
@@ -369,32 +471,51 @@ def draw_model_row(ax, row, yi, offsets):
 
 
 def fig_main(rows, out):
-    left = [r for r in rows if r["epochs"] == 40]
-    right = [r for r in rows if r["epochs"] == 160]
+    left = [r for r in rows if r["group"] == "budget40"]
+    mid = [r for r in rows if r["group"] == "budget160"]
+    fam = [r for r in rows if r["group"] == "families"]
+    panels = [(left, "Trained 40 epochs"),
+              (mid, "Trained 160 epochs")]
+    if fam:
+        panels.append((fam, "CF families: ladder, 160 epochs"))
 
     fig, axes = plt.subplots(
-        1, 2, figsize=(14.2, 7.9), layout="constrained", sharex=True)
-    (axA, axB) = axes
-    nleft = len(left)
-    for ax, group in ((axA, left), (axB, right)):
+        1, len(panels), figsize=(7.3 * len(panels) - 0.4, 7.9),
+        layout="constrained", sharex=True)
+    nrow_max = max(len(left), len(mid))
+    for ax, (group, title) in zip(axes, panels):
         ys = list(range(len(group)))
         for yi, row in zip(ys, group):
             draw_model_row(ax, row, yi, offsets=[-0.055, 0.0, 0.055])
         ax.set_yticks(ys)
         ax.set_yticklabels([r["name"] for r in group], fontsize=10.5)
-        ax.set_ylim(-0.75, max(nleft, len(right)) - 0.25)
+        if len(group) == 1:
+            ax.set_ylim(-0.75, 0.75)
+        else:
+            ax.set_ylim(-0.75, nrow_max - 0.25)
         ax.set_xlim(0, 1.18)
         ax.set_xticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
         ax.set_xlabel("Test strict accuracy (fraction of the 1,000-maze test set)")
+        ax.set_title(title, fontsize=13)
 
-    axA.set_title("Trained 40 epochs", fontsize=13)
-    axB.set_title("Trained 160 epochs", fontsize=13)
-    fig.suptitle(
-        "At the trained depth T=8 and the validation-selected depth T*: "
-        "a 160-epoch budget puts every family at 0.92+ at T*,\n"
-        "while the CF models peak only beyond their trained depth "
-        "(T* = 12\u201316, and at T=8 they stay \u2264 0.91)",
-        fontsize=15)
+    ladder = fam[0] if fam else None
+    if ladder is not None:
+        t_stars = ", ".join(str(t) for t in ladder["T_star"])
+        suptitle = (
+            "At the trained depth T=8 and the validation-selected depth T*: "
+            "160 epochs put every in-project model at 0.92+ at T* "
+            "(their CF rows need T* = 12\u201316 and stay \u2264 0.91 at T=8),\n"
+            f"while the CF-families B-WallAware ladder at the same 160-epoch "
+            f"budget reaches {ladder['ts_mean']:.3f} \u00b1 {ladder['ts_sd']:.3f} "
+            f"at T* (depths {t_stars}) vs {ladder['t8_mean']:.3f} \u00b1 "
+            f"{ladder['t8_sd']:.3f} at T=8")
+    else:
+        suptitle = (
+            "At the trained depth T=8 and the validation-selected depth T*: "
+            "a 160-epoch budget puts every family at 0.92+ at T*,\n"
+            "while the CF models peak only beyond their trained depth "
+            "(T* = 12\u201316, and at T=8 they stay \u2264 0.91)")
+    fig.suptitle(suptitle, fontsize=15)
 
     handles = [
         Patch(facecolor="#777777", alpha=1.0,
@@ -405,23 +526,37 @@ def fig_main(rows, out):
                markerfacecolor="white", markersize=6, lw=0,
                label="individual seed"),
     ]
-    axA.legend(handles=handles, loc="upper center",
-               bbox_to_anchor=(0.5, -0.16), fontsize=11, ncol=2)
+    axes[0].legend(handles=handles, loc="upper center",
+                   bbox_to_anchor=(0.5, -0.16), fontsize=11, ncol=2)
 
+    ladder_note = ""
+    if ladder is not None:
+        ladder_note = (
+            " Right panel: CF-families group, B-WallAware ladder "
+            "(BD-WallAware, hid 16, K 4 rungs), 160 planned epochs per seed, "
+            "read from the external read-only cf-families results tree via "
+            "--families-dir / CF_FAMILIES_DIR, same level-5 curriculum "
+            "splits (4000/1000/1000) and strict metric; its training "
+            "minutes are cumulative across two training sessions (seed 2's "
+            "prior-session minutes an estimate); its T* candidates are "
+            "{1, 2, 4, 8, 12, 16, 24, 32}.")
     footnote = "\n".join(textwrap.wrap(
-        "n = 3 seeds per model; error lines = sample sd (n\u22121); open dots = "
-        "individual seeds; values printed as mean \u00b1 sample sd. Every CF "
-        "model and the fixed-T RecurrentCNN trained at depth T=8; the "
-        "variable-T RecurrentCNN trained with per-batch sampled T in 4\u201316. "
-        "T* = per-seed argmax of validation strict accuracy over candidate "
-        "depths (ties to smaller T). No shading band is drawn; all values are "
-        "in [0, 1], so no band clipping applies. Hardware and per-seed training "
-        "minutes in data.csv: NVIDIA GeForce RTX 3070 Ti (CUDA) where logged.",
-        width=118))
+        "How to read: one row per model, solid bar (upper) = test strict at "
+        "the validation-selected depth T*, faded bar (lower) = at the "
+        "trained depth T=8; dark line = sample sd (n\u22121), open dots = "
+        "the three seeds; panels group the in-project models by training "
+        "budget (40 epochs left, 160 epochs middle)." + ladder_note +
+        " Every CF model and the fixed-T RecurrentCNN trained at depth "
+        "T=8; the variable-T RecurrentCNN trained with per-batch sampled T "
+        "in 4\u201316. T* = per-seed argmax of validation strict over "
+        "candidate depths (ties to smaller T). No shading band is drawn; "
+        "all values are in [0, 1], so no band clipping applies. Hardware "
+        "and per-seed training minutes in data.csv.",
+        width=165 if ladder is not None else 118))
     fig.canvas.draw()
     ren = fig.canvas.get_renderer()
-    boxes = [ax.get_tightbbox(ren) for ax in (axA, axB)]
-    for ax in (axA, axB):
+    boxes = [ax.get_tightbbox(ren) for ax in axes]
+    for ax in axes:
         leg = ax.get_legend()
         if leg is not None:
             boxes.append(leg.get_window_extent(ren))
@@ -438,19 +573,28 @@ def fig_main(rows, out):
 def main():
     apply_style()
     root = repo_root()
+    ladder_dir = ladder_results_dir()
     d, paths = load(root)
     eff_nofrag16 = measure_effective_params(root)
     print(f"Measured CF-NoFrag hid 16: {eff_nofrag16} effective params "
           f"(run_week2.effective_n_params, one forward+backward on a "
           f"synthetic training batch, CPU, T=8)")
     rows = build_rows(d, eff_nofrag16)
+    if ladder_dir is None:
+        print("No --families-dir / CF_FAMILIES_DIR given: the CF-families "
+              "group is omitted, the figure keeps its two budget panels.")
+    else:
+        ladder = load_ladder_row(ladder_dir)
+        finalize_row(ladder, group="families")
+        rows.append(ladder)
 
     out = root / "figures" / "main_results"
     out.mkdir(parents=True, exist_ok=True)
     csv_path = write_csv(rows, out)
     print(f"Wrote {len(rows)} rows -> {csv_path}")
     for r in rows:
-        print(f"{r['key']:20s} epochs={r['epochs']:3d} n={r['n']} "
+        print(f"{r['key']:20s} group={r['group']:9s} epochs={r['epochs']:3d} "
+              f"n={r['n']} "
               f"T8={r['t8_mean']:.4f}\u00b1{r['t8_sd']:.4f} "
               f"T*={r['ts_mean']:.4f}\u00b1{r['ts_sd']:.4f} "
               f"T*depths={r['T_star']} "

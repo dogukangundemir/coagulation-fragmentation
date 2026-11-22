@@ -1,6 +1,6 @@
 # Maze-path predictions: what every model actually outputs
 
-All numbers below are recomputed by `scripts/figures/maze_paths.py` from the stored checkpoints and written to `data.csv` (one row per model, seed, inference depth T and maze); the README numbers are read back from that CSV.
+All numbers below are recomputed from the stored checkpoints by this folder's figure scripts and written to their CSVs: `data.csv` (one row per model, seed, inference depth T and maze; recomputed by `scripts/figures/maze_paths.py`, covers every section except the probability-map section at the end) and `data_probability_maps.csv` (recomputed by `scripts/figures/probability_maps.py`, covers the probability-map section); the README numbers are read back from those CSVs.
 
 Models (state dicts loaded with the repo's own factories; seed 0 shown in all instance-level figures, three seeds aggregated wherever a mean is shown; checkpoints live in the main repository's results archive):
 
@@ -107,3 +107,21 @@ What the two rows show, from the probe rows of data.csv: on test maze 256, CF-Fu
 
 **Caveats.** Both models were trained with rollout depth 8, so predictions at t > 8 are beyond the training rollout depth (extrapolation for both, in different ways: the RecurrentCNN never saw a longer loop, CF-Full never saw a deeper coagulation-fragmentation process); the two mazes are worst cases selected to be hard (the second under the shared no-repeats rule), not typical test mazes; single seed (0); wrong cells = extra + missed.
 
+<!-- f6_probability_maps:start -->
+
+## `probability_maps.png` - per-cell path probability maps (packet figure F6)
+
+
+**Caption.** The raw sigmoid output of every 160-epoch curriculum model (seed 0) on the same four gallery mazes as `path_gallery_1.png` (level-5 test mazes 269, 510, 635, 848, the random-pick rows of the path gallery). Column pairs left to right are the four mazes; the top row shows each maze and its target; each model row shows, at its seed-0 validation-selected inference depth T, the per-cell path probability map (no threshold) and next to it the thresholded prediction used for all strict/exact scoring. Models top to bottom: CF-Full (hid 16, 160 epochs, trained at fixed T = 8); CF-NoFrag (hid 18, fragmentation off, 160 epochs, trained at fixed T = 8); CF-WallAware (hid 16, 160 epochs, trained at fixed T = 8); RecurrentCNN (hid 22, 160 epochs, trained at fixed T = 8); RecurrentCNN (hid 22, 160 epochs, rollout depth T sampled from 4-16 per batch).
+
+**How to read.** Probability maps are on a fixed 0-1 colour scale (header bar; a cell counts as on-path at p >= 0.5, so 0.5 is the decision threshold), wall cells are dark, the true path is outlined in black, circle = start, star = goal. Thresholded panels: blue = predicted cell on the true path, vermillion = extra predicted cell, purple = missed true-path cell; the captions below each probability map give the weakest true-path cell of that model-maze combination, the captions below each thresholded panel the wrong-cell count. Each pair of columns is one maze, each row one model at its own inference depth T (T = 16; 12; 12; 8; 8 top to bottom).
+
+**Key takeaway.** All 20 of 20 model-maze verdicts are solved, and the sigmoid outputs are near-binary rather than graded: across all 20 panels the weakest single true-path cell has p = 0.968 (CF-NoFrag (hid 18, fragmentation off, 160 epochs, trained at fixed T = 8), test maze 848) and the strongest off-path free cell p = 0.048 (CF-Full (hid 16, 160 epochs, trained at fixed T = 8), test maze 848); 0 free cell(s) in total sit in the 0.25-0.75 middle band. For reference, the same checkpoints on the whole 1000-maze test split at the same T give strict rates cf-full-160ep 0.969; cf-nofrag-160ep 0.867; cf-wallaware-160ep 0.993; rcnn160-fixedT 0.993; rcnn160-varT 0.982 (each recomputed by the script and matching the stored training record within 0.001), so these four easy mazes (true path 9/11/9/9 cells) show a running example of the sigmoid output, not a difficulty probe.
+
+**Data source.** `data_probability_maps.csv` in this folder (one row per model and maze: probability summary statistics, thresholded metrics, and the recomputed full-split strict rate with its stored reference); checkpoints (read-only), relative to the curriculum results archive root (configurable via the `$CF_RESULTS_ROOT` environment variable): `followups/E1_CF-Full_seed0.pt`, `followups/E4_CF-NoFrag160_seed0.pt`, `wallaware160/E5_CF-WallAware160_seed0.pt`, `rcnn160/E6_RecurrentCNN160_seed0.pt`, `rcnn160/E7_RecurrentCNN160-Tsamp_seed0.pt`. The four mazes are re-derived with the random-pick selection rule of the path gallery (`path_gallery_1.png`) and cross-checked against the record above.
+
+**Caveats.** Single seed (0); the four mazes are random picks and turn out easy for all five models (all truth paths 9-11 cells, all verdicts solved), so the figure illustrates the shape of the sigmoid output on a running example - models do differ on the full split (see the strict rates above) and their failures are shown in the other figures in this folder: the path gallery (`path_gallery_1.png`, `path_gallery_2.png`), the whole-split coverage tiles (`coverage_<model>.png`), the failure anatomy (`failure_anatomy.png`) and the step-wise rollout in depth (`thinking_steps.png`). Probabilities are read out once at each model's validation-selected T; the fixed 0-1 colour scale saturates above p ~ 0.97, so exact per-cell values are in the CSV; walls are drawn from the maze, the models receive the walkable mask but their wall-cell probabilities are never scored or shown.
+
+Packet figure: F6
+
+<!-- f6_probability_maps:end -->
